@@ -31,6 +31,8 @@ type SidebarProps = {
   currentPath?: string;
 };
 
+const MAINTENANCE_ACTIVE_CLASS = 'bg-slate-950 border-l-2 border-[#C76E00] text-white';
+
 const iconMap = {
   AlertTriangle,
   ClipboardCheck,
@@ -52,6 +54,19 @@ function isKnownRole(role: string): role is PharmaOpsRole {
 
 function resolveTheme(role: string): SidebarTheme {
   return isKnownRole(role) ? ROLE_SIDEBAR_THEME[role] : DEFAULT_SIDEBAR_THEME;
+}
+
+function getHrefPath(href: string) {
+  return href.split('?')[0] ?? href;
+}
+
+function isMaintenanceNode(node: NavigationNode): boolean {
+  return Boolean(
+    node.title === 'Mantenimientos' ||
+      node.title === 'HVAC' ||
+      (node.href && getHrefPath(node.href).startsWith('/mantenimiento')) ||
+      node.children?.some((child) => isMaintenanceNode(child)),
+  );
 }
 
 function NavigationIcon({ name, className }: { name?: string; className: string }) {
@@ -79,13 +94,51 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
     }));
   }
 
+  function isNodeActive(node: NavigationNode) {
+    if (!node.href) {
+      return false;
+    }
+
+    const hrefPath = getHrefPath(node.href);
+
+    if (hrefPath === '/mantenimiento') {
+      return currentPath.startsWith('/mantenimiento');
+    }
+
+    return !node.href.includes('?') && currentPath === hrefPath;
+  }
+
+  function isNodeRouteOpen(node: NavigationNode) {
+    if (node.href && getHrefPath(node.href) === '/mantenimiento') {
+      return currentPath.startsWith('/mantenimiento');
+    }
+
+    if (node.title === 'HVAC') {
+      return currentPath.startsWith('/mantenimiento/hvac');
+    }
+
+    return Boolean(node.href && currentPath === getHrefPath(node.href));
+  }
+
+  function hasActiveDescendant(node: NavigationNode): boolean {
+    return Boolean(
+      node.children?.some((child) => isNodeRouteOpen(child) || hasActiveDescendant(child)),
+    );
+  }
+
   function renderNode(node: NavigationNode, depth = 0) {
     const hasChildren = Boolean(node.children?.length);
-    const isOpen = Boolean(openMenus[node.title]);
-    const isActive = Boolean(node.href && currentPath === node.href);
+    const hasActiveChild = hasActiveDescendant(node);
+    const isOpen = Boolean(openMenus[node.title]) || isNodeRouteOpen(node) || hasActiveChild;
+    const isActive = isNodeActive(node);
+    const isMaintenanceActive =
+      currentPath.startsWith('/mantenimiento') &&
+      isMaintenanceNode(node) &&
+      (isActive || isOpen || hasActiveChild);
+    const activeClass = isMaintenanceActive ? MAINTENANCE_ACTIVE_CLASS : theme.itemActive;
     const paddingClass = depth === 0 ? 'px-3' : depth === 1 ? 'pl-4 pr-3' : 'pl-8 pr-3';
     const itemClass = `${paddingClass} flex min-h-11 w-full items-center justify-between rounded-md py-2 text-left text-sm font-semibold transition ${theme.text} ${
-      isActive ? theme.itemActive : theme.item
+      isActive || isMaintenanceActive ? activeClass : theme.item
     }`;
 
     if (hasChildren) {

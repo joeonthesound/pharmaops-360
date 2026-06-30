@@ -6,15 +6,13 @@ import { ChecklistForm } from './checklist-form';
 import { PrintReportButton } from './print-report-button';
 import { SignatureReviewCard } from './signature-review-card';
 
-export const runtime = 'edge';
-
 type ActivoConUuid = Activo & {
   uuid: string;
 };
 
 type ChecklistPageProps = {
   params: Promise<{
-    id: string;
+    area: string;
   }>;
 };
 
@@ -790,7 +788,7 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
 
 export default async function ChecklistInspeccionPage({ params }: ChecklistPageProps) {
   const resolvedParams = await params;
-  const requestedUuid = String(resolvedParams.id ?? '').trim();
+  const requestedUuid = String(resolvedParams.area ?? '').trim();
   const reportPath = `/mantenimiento/${requestedUuid}`;
   const supabase = await createSupabaseServerClient();
 

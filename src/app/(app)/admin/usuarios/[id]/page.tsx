@@ -6,8 +6,6 @@ import {
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { UserForm } from '../user-form';
 
-export const runtime = 'edge';
-
 type EditarUsuarioPageProps = {
   params: Promise<{
     id: string;

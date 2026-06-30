@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+import { useParams, usePathname } from 'next/navigation';
 import { Bell, Menu } from 'lucide-react';
 import { Sidebar } from './sidebar';
 
@@ -9,6 +10,13 @@ type AppShellProps = {
   children: React.ReactNode;
   currentRole: string;
   currentUserName: string;
+};
+
+type MaintenanceRouteParams = {
+  area?: string;
+  docType?: string;
+  id?: string;
+  status?: string;
 };
 
 function getInitials(name: string) {
@@ -20,10 +28,76 @@ function getInitials(name: string) {
     .join('');
 }
 
+const breadcrumbLabels: Record<string, string> = {
+  mantenimiento: 'MANTENIMIENTO',
+  hvac: 'HVAC',
+  activos: 'ACTIVOS',
+  rui: 'RUI',
+  RUI: 'RUI',
+  ht: 'HISTORIAL TECNICO (HT)',
+  activo: 'DOCUMENTO ACTIVO',
+  enviado: 'REPORTE ENVIADO',
+  rechazado: 'REPORTE RECHAZADO',
+  aprobar: 'APROBACION',
+  dashboard: 'DASHBOARD',
+  admin: 'ADMIN',
+  usuarios: 'USUARIOS',
+};
+
+function formatBreadcrumbSegment(segment: string) {
+  return breadcrumbLabels[segment] ?? decodeURIComponent(segment).replaceAll('-', ' ').toUpperCase();
+}
+
+function buildBreadcrumbs(pathname: string, params: MaintenanceRouteParams) {
+  const segments = pathname.split('/').filter(Boolean);
+  const normalizedSegments = segments.map((segment) => {
+    if (params.area && segment === params.area) {
+      return params.area;
+    }
+
+    if (params.docType && segment === params.docType) {
+      return params.docType;
+    }
+
+    if (params.id && segment === params.id) {
+      return params.id;
+    }
+
+    if (params.status && segment === params.status) {
+      return params.status;
+    }
+
+    return segment;
+  });
+
+  return [
+    { href: '/', label: 'Planta Central' },
+    ...normalizedSegments.map((segment, index) => ({
+      href: `/${normalizedSegments.slice(0, index + 1).join('/')}`,
+      label: formatBreadcrumbSegment(segment),
+    })),
+  ];
+}
+
+function isTechnicianRole(role: string) {
+  const normalizedRole = role.toLowerCase();
+
+  return normalizedRole.includes('tecnico') || normalizedRole.includes('técnico');
+}
+
 export function AppShell({ children, currentRole, currentUserName }: AppShellProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const pathname = usePathname();
+  const routeParams = useParams<MaintenanceRouteParams>();
+  const breadcrumbs = buildBreadcrumbs(pathname, routeParams);
   const initials = getInitials(currentUserName || 'P360') || 'P';
+  const isTechnicianProfile = isTechnicianRole(currentRole);
+  const profileContainerClass = isTechnicianProfile
+    ? 'flex min-h-11 items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-blue-900 shadow-sm'
+    : 'flex min-h-11 items-center gap-3 rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm';
+  const avatarClass = isTechnicianProfile
+    ? 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-900 text-xs font-semibold text-white'
+    : 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -59,7 +133,34 @@ export function AppShell({ children, currentRole, currentUserName }: AppShellPro
 
             <div className="hidden min-w-0 flex-1 md:block">
               <div className="flex h-11 max-w-xl items-center rounded-md border border-slate-200 bg-slate-50 px-4 text-sm text-slate-600">
-                Planta Central / Labymed / Operación HVAC
+                <nav aria-label="Ruta de mantenimiento" className="min-w-0">
+                  <ol className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold md:text-sm">
+                    {breadcrumbs.map((breadcrumb, index) => {
+                      const isLast = index === breadcrumbs.length - 1;
+
+                      return (
+                        <li
+                          className="flex min-w-0 items-center gap-2"
+                          key={`${breadcrumb.href}-${breadcrumb.label}`}
+                        >
+                          {index > 0 ? <span className="text-slate-300">/</span> : null}
+                          {isLast ? (
+                            <span className="max-w-48 truncate text-slate-950">
+                              {breadcrumb.label}
+                            </span>
+                          ) : (
+                            <Link
+                              className="max-w-40 truncate transition hover:text-slate-950"
+                              href={breadcrumb.href}
+                            >
+                              {breadcrumb.label}
+                            </Link>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </nav>
               </div>
             </div>
 
@@ -79,13 +180,17 @@ export function AppShell({ children, currentRole, currentUserName }: AppShellPro
               <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-600" />
             </button>
 
-            <div className="flex min-h-11 items-center gap-3 rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+            <div className={profileContainerClass}>
+              <div className={avatarClass}>
                 {initials}
               </div>
               <div className="hidden min-w-0 sm:block">
-                <p className="truncate text-sm font-semibold text-slate-950">{currentUserName}</p>
-                <p className="truncate text-xs text-slate-500">{currentRole}</p>
+                <p className={`truncate text-sm font-semibold ${isTechnicianProfile ? 'text-blue-900' : 'text-slate-950'}`}>
+                  {currentUserName}
+                </p>
+                <p className={`truncate text-xs ${isTechnicianProfile ? 'text-blue-700' : 'text-slate-500'}`}>
+                  {currentRole}
+                </p>
               </div>
             </div>
           </div>

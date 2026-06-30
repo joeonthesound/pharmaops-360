@@ -65,25 +65,25 @@ export const NAVIGATION_TREE: NavigationNode[] = [
         children: [
           {
             title: 'Activos',
-            href: '/dashboard?view=pending',
+            href: '/mantenimiento/hvac/activos?view=pending',
             icon: 'Package',
             rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo', 'Temporal'],
           },
           {
             title: 'Enviados',
-            href: '/dashboard?view=sent',
+            href: '/mantenimiento/hvac/activos?view=sent',
             icon: 'Send',
             rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
           },
           {
             title: 'Rechazados',
-            href: '/dashboard?view=rejected',
+            href: '/mantenimiento/hvac/activos?view=rejected',
             icon: 'AlertTriangle',
             rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
           },
           {
             title: 'Historial',
-            href: '/dashboard?view=history',
+            href: '/mantenimiento/hvac/activos?view=history',
             icon: 'History',
             rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
           },

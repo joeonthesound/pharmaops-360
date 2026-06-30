@@ -3,8 +3,6 @@ import { redirect } from 'next/navigation';
 import { assertRootAdminAccess } from '@/modules/usuarios-roles/user-admin.actions';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 
-export const runtime = 'edge';
-
 type UsuarioListado = {
   id: number;
   user_email: string;

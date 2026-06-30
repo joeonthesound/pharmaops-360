@@ -204,7 +204,7 @@ function getOrderHref(registro: MantenimientoRegistro, activo?: ActivoConUuid) {
     return `/mantenimiento/hvac/rui/activo/${activo.uuid}`;
   }
 
-  return '/dashboard';
+  return '/mantenimiento/hvac/activos';
 }
 
 function getOrderActionLabel(status: MantenimientoRegistro['status']) {
@@ -400,7 +400,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     ? 'bg-slate-900 text-white'
                     : 'bg-white text-slate-700 hover:bg-slate-100'
                 }`}
-                href={`/dashboard?view=${tab.value}`}
+                href={`/mantenimiento/hvac/activos?view=${tab.value}`}
                 key={tab.value}
               >
                 {tab.label}

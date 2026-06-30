@@ -1,11 +1,9 @@
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { ApprovalActionsPanel } from './approval-actions-panel';
 
-export const runtime = 'edge';
-
 type AprobarPageProps = {
   params: Promise<{
-    id: string;
+    area: string;
   }>;
 };
 
@@ -179,7 +177,7 @@ function formatResponseValue(respuesta: RespuestaAuditada) {
 
 export default async function PanelAprobacionPage({ params }: AprobarPageProps) {
   const resolvedParams = await params;
-  const recordUuid = String(resolvedParams.id ?? '').trim();
+  const recordUuid = String(resolvedParams.area ?? '').trim();
   const supabase = await createSupabaseServerClient();
 
   const {
