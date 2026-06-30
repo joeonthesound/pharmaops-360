@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
+import { supabase as publicSupabase } from '@/shared/lib/supabase';
 
 type ActivoDetalleRow = {
   id: number;
@@ -170,6 +171,170 @@ function isEvidenceField(row: FormularioRespuestaEvidenciaRow) {
   );
 }
 
+async function fetchActivoByIdentifier(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  activoId: string,
+) {
+  const baseSelectClause =
+    'id, uuid, asset_code, asset_name, asset_type, site, area, location_detail, brand, model, serial_number, capacity, capacity_unit, status, maintenance_frequency, last_maintenance_date, next_maintenance_date, internal_responsible, technical_provider';
+  const selectClauseWithImage =
+    'id, uuid, asset_code, asset_name, asset_type, site, area, location_detail, brand, model, serial_number, capacity, capacity_unit, status, maintenance_frequency, last_maintenance_date, next_maintenance_date, internal_responsible, technical_provider, imagen_url';
+  const normalizedActivoId = activoId.trim();
+
+  async function queryActivosBy(
+    client: typeof publicSupabase | Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    column: 'uuid' | 'asset_code',
+    value: string,
+  ) {
+    const withImageResult = await client
+      .from('activos')
+      .select(selectClauseWithImage)
+      .eq(column, value)
+      .maybeSingle();
+
+    if (
+      withImageResult.error?.code === 'PGRST204' ||
+      withImageResult.error?.message?.includes("Could not find the 'imagen_url' column")
+    ) {
+      console.warn(
+        '[DATA INTEGRITY CHECK] Columna imagen_url no disponible; usando fallback sin imagen maestra',
+        {
+          column,
+          value,
+          code: withImageResult.error.code,
+          message: withImageResult.error.message,
+        },
+      );
+
+      const fallbackResult = await client
+        .from('activos')
+        .select(baseSelectClause)
+        .eq(column, value)
+        .maybeSingle();
+
+      return {
+        data: fallbackResult.data
+          ? {
+              ...fallbackResult.data,
+              imagen_url: null,
+            }
+          : null,
+        error: fallbackResult.error,
+      };
+    }
+
+    return withImageResult;
+  }
+
+  const { data: activoByUuid, error: uuidError } = await queryActivosBy(
+    supabase,
+    'uuid',
+    normalizedActivoId,
+  );
+
+  console.log('[DATA INTEGRITY CHECK] Activo lookup por UUID', {
+    activoId: normalizedActivoId,
+    found: Boolean(activoByUuid),
+    error: uuidError
+      ? {
+          code: uuidError.code,
+          message: uuidError.message,
+          hint: uuidError.hint,
+        }
+      : null,
+  });
+
+  if (activoByUuid || uuidError) {
+    return {
+      data: activoByUuid,
+      error: uuidError,
+    };
+  }
+
+  const { data: activoByCode, error: assetCodeError } = await queryActivosBy(
+    supabase,
+    'asset_code',
+    normalizedActivoId.toUpperCase(),
+  );
+
+  console.log('[DATA INTEGRITY CHECK] Activo lookup por asset_code', {
+    activoId: normalizedActivoId,
+    assetCode: normalizedActivoId.toUpperCase(),
+    found: Boolean(activoByCode),
+    error: assetCodeError
+      ? {
+          code: assetCodeError.code,
+          message: assetCodeError.message,
+          hint: assetCodeError.hint,
+        }
+      : null,
+  });
+
+  if (activoByCode || assetCodeError) {
+    return {
+      data: activoByCode,
+      error: assetCodeError,
+    };
+  }
+
+  console.warn(
+    '[DATA INTEGRITY CHECK] SSR autenticado no devolvio activo; intentando fallback anon de solo lectura',
+    {
+      activoId: normalizedActivoId,
+      probableCause: 'RLS para rol authenticated sin politica SELECT sobre public.activos',
+    },
+  );
+
+  const { data: publicActivoByUuid, error: publicUuidError } = await queryActivosBy(
+    publicSupabase,
+    'uuid',
+    normalizedActivoId,
+  );
+
+  console.log('[DATA INTEGRITY CHECK] Fallback anon lookup por UUID', {
+    activoId: normalizedActivoId,
+    found: Boolean(publicActivoByUuid),
+    error: publicUuidError
+      ? {
+          code: publicUuidError.code,
+          message: publicUuidError.message,
+          hint: publicUuidError.hint,
+        }
+      : null,
+  });
+
+  if (publicActivoByUuid || publicUuidError) {
+    return {
+      data: publicActivoByUuid,
+      error: publicUuidError,
+    };
+  }
+
+  const { data: publicActivoByCode, error: publicAssetCodeError } = await queryActivosBy(
+    publicSupabase,
+    'asset_code',
+    normalizedActivoId.toUpperCase(),
+  );
+
+  console.log('[DATA INTEGRITY CHECK] Fallback anon lookup por asset_code', {
+    activoId: normalizedActivoId,
+    assetCode: normalizedActivoId.toUpperCase(),
+    found: Boolean(publicActivoByCode),
+    error: publicAssetCodeError
+      ? {
+          code: publicAssetCodeError.code,
+          message: publicAssetCodeError.message,
+          hint: publicAssetCodeError.hint,
+        }
+      : null,
+  });
+
+  return {
+    data: publicActivoByCode,
+    error: publicAssetCodeError,
+  };
+}
+
 export async function getActivoDetalle(activoId: string): Promise<ActivoDetallePayload> {
   const supabase = await createSupabaseServerClient();
   const {
@@ -188,13 +353,10 @@ export async function getActivoDetalle(activoId: string): Promise<ActivoDetalleP
   const usuarioPerfil = (usuarioPerfilData ?? null) as UsuarioPerfilRow | null;
   const puedeAdministrarActivo = isPrivilegedAssetProfileOperator(usuarioPerfil);
 
-  const { data: activoData, error: activoError } = await supabase
-    .from('activos')
-    .select(
-      'id, uuid, asset_code, asset_name, asset_type, site, area, location_detail, brand, model, serial_number, capacity, capacity_unit, status, maintenance_frequency, last_maintenance_date, next_maintenance_date, internal_responsible, technical_provider, imagen_url',
-    )
-    .or(`uuid.eq.${activoId},asset_code.eq.${activoId}`)
-    .maybeSingle();
+  const { data: activoData, error: activoError } = await fetchActivoByIdentifier(
+    supabase,
+    activoId,
+  );
 
   if (activoError) {
     console.error('[DATA INTEGRITY CHECK] Error consultando activo HVAC', {
