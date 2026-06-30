@@ -31,11 +31,11 @@ export function EvidencePreviewGallery({
 
   return (
     <>
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
         {images.map((imageSrc, index) => (
           <button
             aria-label={`Abrir evidencia ${index + 1} de ${reportLabel}`}
-            className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 shadow-sm transition hover:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 shadow-sm transition hover:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
             key={`${imageSrc}-${index}`}
             onClick={() => setFocusedImage(imageSrc)}
             type="button"
@@ -44,7 +44,7 @@ export function EvidencePreviewGallery({
               alt={`Evidencia ${index + 1} de ${reportLabel}`}
               className="object-cover transition group-hover:scale-105"
               fill
-              sizes="96px"
+              sizes="64px"
               src={imageSrc}
               unoptimized
             />

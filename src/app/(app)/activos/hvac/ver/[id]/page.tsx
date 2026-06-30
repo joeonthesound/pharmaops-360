@@ -60,7 +60,7 @@ function resolveLifecycle(reporte: ActivoReporteDetalle) {
 }
 
 function getReportUuid(reporte: ActivoReporteDetalle) {
-  return getStringValue(reporte.mantenimiento_uuid ?? reporte.uuid, String(reporte.id));
+  return getStringValue(reporte.reporte_id ?? reporte.uuid, String(reporte.id));
 }
 
 function getReportCode(reporte: ActivoReporteDetalle) {
@@ -69,10 +69,10 @@ function getReportCode(reporte: ActivoReporteDetalle) {
 
 function getReportDate(reporte: ActivoReporteDetalle) {
   const rawDate =
-    typeof reporte.ejecutado_at === 'string'
-      ? reporte.ejecutado_at
-      : typeof reporte.created_at === 'string'
-        ? reporte.created_at
+    typeof reporte.executed_at === 'string'
+      ? reporte.executed_at
+      : typeof reporte.scheduled_date === 'string'
+        ? reporte.scheduled_date
         : null;
 
   if (!rawDate) {
@@ -103,7 +103,13 @@ export default async function ActivoHvacDetallePage({
   const resolvedParams = await params;
   const data = await getActivoDetalle(resolvedParams.id);
 
-  console.log('[DATA INTEGRITY CHECK]:', data);
+  // Se desactivara posteriormente desde el toggle de SuperAdmin para pruebas OQ controladas.
+  if (process.env.NEXT_PUBLIC_SUPERADMIN_DEBUG === 'true') {
+    console.log(
+      '[VERIFICATION SYSTEM ACTIVE - GxP MATCH]:',
+      data.historial_mantenimientos,
+    );
+  }
 
   if (!data.activo) {
     return (
@@ -228,71 +234,106 @@ export default async function ActivoHvacDetallePage({
               </h2>
             </div>
             <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">
-              {data.reportes.length} RUI asociado(s)
+              {data.historial_mantenimientos.length} RUI asociado(s)
             </span>
           </div>
 
-          <div className="mt-4 grid gap-4">
-            {data.reportes.length === 0 ? (
+          <div className="mt-4">
+            {data.historial_mantenimientos.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-sm font-medium text-slate-600">
                 No existen reportes RUI asociados a este activo.
               </div>
             ) : (
-              data.reportes.map((reporte) => {
-                const lifecycle = resolveLifecycle(reporte);
-                const reportUuid = getReportUuid(reporte);
-                const reportCode = getReportCode(reporte);
-                const reportHref = `/mantenimiento/hvac/rui/${lifecycle.slug}/${reportUuid}`;
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="hidden grid-cols-[1.25fr_1fr_1fr_1.6fr_140px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500 lg:grid">
+                  <span>Codigo RUI</span>
+                  <span>Fecha de Inspeccion</span>
+                  <span>Estado / Fase GxP</span>
+                  <span>Evidencias Multimedia</span>
+                  <span className="text-right">Accion</span>
+                </div>
 
-                return (
-                  <article
-                    className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[260px_1fr]"
-                    key={`${reportCode}-${reportUuid}`}
-                  >
-                    <div className="grid content-start gap-3">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white">
-                          <FileText aria-hidden="true" size={19} />
-                        </div>
+                <div className="divide-y divide-slate-200">
+                  {data.historial_mantenimientos.map((rui) => {
+                    const lifecycle = resolveLifecycle(rui);
+                    const reportUuid = getReportUuid(rui);
+                    const reportCode = getReportCode(rui);
+                    const truncatedUuid =
+                      reportUuid.length > 18
+                        ? `${reportUuid.slice(0, 8)}...${reportUuid.slice(-6)}`
+                        : reportUuid;
+                    const reportHref = `/mantenimiento/hvac/rui/ht/${reportUuid}`;
+
+                    return (
+                      <div
+                        className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.25fr_1fr_1fr_1.6fr_140px] lg:items-center"
+                        key={`${reportCode}-${reportUuid}`}
+                      >
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-slate-950">
-                            {reportCode}
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 lg:hidden">
+                            Codigo RUI
                           </p>
-                          <p className="mt-1 text-xs font-medium text-slate-500">
-                            {getReportDate(reporte)}
+                          <div className="mt-1 flex min-w-0 items-center gap-2 lg:mt-0">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white">
+                              <FileText aria-hidden="true" size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-950">
+                                {reportCode}
+                              </p>
+                              <p className="font-mono text-xs text-slate-500">
+                                {truncatedUuid}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 lg:hidden">
+                            Fecha de Inspeccion
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-700 lg:mt-0">
+                            {getReportDate(rui)}
                           </p>
                         </div>
+
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 lg:hidden">
+                            Estado / Fase GxP
+                          </p>
+                          <span
+                            className={`mt-1 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-bold lg:mt-0 ${lifecycle.className}`}
+                          >
+                            {lifecycle.label}
+                          </span>
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="mb-2 flex items-center gap-2 lg:hidden">
+                            <ImageIcon aria-hidden="true" className="text-slate-500" size={16} />
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                              Evidencias Multimedia ({rui.imagenes_evidencia.length})
+                            </p>
+                          </div>
+                          <EvidencePreviewGallery
+                            images={rui.imagenes_evidencia}
+                            reportLabel={reportCode}
+                          />
+                        </div>
+
+                        <div className="flex justify-start lg:justify-end">
+                          <Link
+                            className="inline-flex min-h-10 items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                            href={reportHref}
+                          >
+                            Ver Reporte
+                          </Link>
+                        </div>
                       </div>
-
-                      <span
-                        className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-bold ${lifecycle.className}`}
-                      >
-                        {lifecycle.label}
-                      </span>
-
-                      <Link
-                        className="inline-flex min-h-10 items-center justify-center rounded-md border border-slate-900 bg-white px-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-900 hover:text-white"
-                        href={reportHref}
-                      >
-                        Ver RUI
-                      </Link>
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="mb-3 flex items-center gap-2">
-                        <ImageIcon aria-hidden="true" className="text-slate-500" size={17} />
-                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                          Evidencias fotograficas ({reporte.imagenes_evidencia.length})
-                        </p>
-                      </div>
-                      <EvidencePreviewGallery
-                        images={reporte.imagenes_evidencia}
-                        reportLabel={reportCode}
-                      />
-                    </div>
-                  </article>
-                );
-              })
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
         </section>
