@@ -15,13 +15,14 @@ type ActivoDetalleRow = {
   serial_number: string;
   capacity: string;
   capacity_unit: string;
+  installation_date: string | null;
   status: string;
   maintenance_frequency: string;
   last_maintenance_date: string | null;
   next_maintenance_date: string | null;
   internal_responsible: string | null;
   technical_provider: string | null;
-  imagen_url: string | null;
+  imagen_url?: string | null;
 };
 
 type FormularioReporteRow = {
@@ -175,10 +176,8 @@ async function fetchActivoByIdentifier(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   activoId: string,
 ) {
-  const baseSelectClause =
-    'id, uuid, asset_code, asset_name, asset_type, site, area, location_detail, brand, model, serial_number, capacity, capacity_unit, status, maintenance_frequency, last_maintenance_date, next_maintenance_date, internal_responsible, technical_provider';
-  const selectClauseWithImage =
-    'id, uuid, asset_code, asset_name, asset_type, site, area, location_detail, brand, model, serial_number, capacity, capacity_unit, status, maintenance_frequency, last_maintenance_date, next_maintenance_date, internal_responsible, technical_provider, imagen_url';
+  const selectClause =
+    'id, uuid, asset_code, asset_name, asset_type, site, area, location_detail, brand, model, serial_number, capacity, capacity_unit, installation_date, status, maintenance_frequency, last_maintenance_date, next_maintenance_date, internal_responsible, technical_provider';
   const normalizedActivoId = activoId.trim();
 
   async function queryActivosBy(
@@ -186,44 +185,21 @@ async function fetchActivoByIdentifier(
     column: 'uuid' | 'asset_code',
     value: string,
   ) {
-    const withImageResult = await client
+    const result = await client
       .from('activos')
-      .select(selectClauseWithImage)
+      .select(selectClause)
       .eq(column, value)
       .maybeSingle();
 
-    if (
-      withImageResult.error?.code === 'PGRST204' ||
-      withImageResult.error?.message?.includes("Could not find the 'imagen_url' column")
-    ) {
-      console.warn(
-        '[DATA INTEGRITY CHECK] Columna imagen_url no disponible; usando fallback sin imagen maestra',
-        {
-          column,
-          value,
-          code: withImageResult.error.code,
-          message: withImageResult.error.message,
-        },
-      );
-
-      const fallbackResult = await client
-        .from('activos')
-        .select(baseSelectClause)
-        .eq(column, value)
-        .maybeSingle();
-
-      return {
-        data: fallbackResult.data
-          ? {
-              ...fallbackResult.data,
-              imagen_url: null,
-            }
-          : null,
-        error: fallbackResult.error,
-      };
-    }
-
-    return withImageResult;
+    return {
+      data: result.data
+        ? {
+            ...result.data,
+            imagen_url: null,
+          }
+        : null,
+      error: result.error,
+    };
   }
 
   const { data: activoByUuid, error: uuidError } = await queryActivosBy(

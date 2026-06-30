@@ -168,6 +168,10 @@ export default async function ActivoHvacDetallePage({
               />
               <MetadataItem label="Serie" value={activo.serial_number} />
               <MetadataItem
+                label="Fecha de instalacion"
+                value={activo.installation_date ?? 'No registrada'}
+              />
+              <MetadataItem
                 label="Proximo mantenimiento"
                 value={activo.next_maintenance_date ?? 'No programado'}
               />
