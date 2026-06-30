@@ -39,7 +39,7 @@ type NormalizedImagePayload = {
   metadata: Record<string, unknown>;
 };
 
-const EVIDENCE_BUCKET = 'evidencias-mantenimiento';
+const EVIDENCE_BUCKET = 'mantenimiento';
 
 function parseJsonSafely(value: string) {
   try {

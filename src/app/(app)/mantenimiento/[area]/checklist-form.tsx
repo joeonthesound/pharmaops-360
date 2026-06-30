@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { supabase } from '@/shared/lib/supabase';
 
 export interface FieldResponse {
   field_id: number;
@@ -74,6 +75,7 @@ type ModalState = {
 
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EVIDENCE_BUCKET = 'mantenimiento';
 
 function normalizeFieldType(fieldType: string) {
   return fieldType.trim().toLowerCase();
@@ -193,6 +195,20 @@ function resolveFieldTypeForStorage(fieldType: string) {
   }
 
   return 'text' as const;
+}
+
+function sanitizeFileName(fileName: string) {
+  return fileName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+}
+
+function isEvidenceFile(value: FormDataEntryValue): value is File {
+  return value instanceof File && value.size > 0;
 }
 
 export function ChecklistForm({
@@ -335,6 +351,10 @@ export function ChecklistForm({
       const formData = new FormData(event.currentTarget);
       const currentMantenimientoId = Number(maintenanceRecordId ?? activoId);
       const camposById = new Map(campos.map((campo) => [campo.id, campo]));
+      const evidenceFiles = formData.getAll('evidencias').filter(isEvidenceFile);
+      const evidenceFields = campos.filter(
+        (campo) => resolveFieldTypeForStorage(campo.field_type) === 'evidence',
+      );
       const formValues = responses.reduce<Record<string, string | number | boolean | null>>(
         (acc, response) => {
           acc[String(response.field_id)] =
@@ -343,6 +363,87 @@ export function ChecklistForm({
         },
         {},
       );
+
+      if (evidenceFiles.length > 0 && evidenceFields.length === 0) {
+        setModal({
+          status: 'error',
+          message:
+            'La plantilla no contiene un campo de evidencia para vincular las imagenes seleccionadas.',
+          debug: {
+            stage: 'client_evidence_field_missing',
+            selectedFiles: evidenceFiles.map((file) => ({
+              name: file.name,
+              size: file.size,
+              type: file.type,
+            })),
+            availableFields: campos.map((campo) => ({
+              id: campo.id,
+              field_key: campo.field_key,
+              field_type: campo.field_type,
+            })),
+          },
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (evidenceFiles.length > 0) {
+        const evidenceOwnerId = (maintenanceRecordUuid || assetUuid).trim();
+        const uploadedImages = [];
+
+        for (const [index, file] of evidenceFiles.entries()) {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const safeFileName = sanitizeFileName(file.name || `evidencia-${index + 1}.jpg`);
+          const storagePath = `evidencias/${evidenceOwnerId}/${timestamp}-${index + 1}-${safeFileName}`;
+          const { error: uploadError } = await supabase.storage
+            .from(EVIDENCE_BUCKET)
+            .upload(storagePath, file, {
+              cacheControl: '3600',
+              contentType: file.type || 'application/octet-stream',
+              upsert: false,
+            });
+
+          if (uploadError) {
+            setModal({
+              status: 'error',
+              message: 'No fue posible cargar una evidencia al Storage de Supabase.',
+              debug: {
+                stage: 'client_storage_upload_error',
+                bucket: EVIDENCE_BUCKET,
+                storagePath,
+                file: {
+                  name: file.name,
+                  size: file.size,
+                  type: file.type,
+                },
+                supabase_error: {
+                  message: uploadError.message,
+                  name: uploadError.name,
+                },
+              },
+            });
+            setIsSubmitting(false);
+            return;
+          }
+
+          const publicUrl = supabase.storage
+            .from(EVIDENCE_BUCKET)
+            .getPublicUrl(storagePath).data.publicUrl;
+
+          uploadedImages.push({
+            bucket: EVIDENCE_BUCKET,
+            path: storagePath,
+            publicUrl,
+            fileName: file.name,
+            fileSize: file.size,
+            contentType: file.type || null,
+            uploadedAt: new Date().toISOString(),
+          });
+        }
+
+        formValues[String(evidenceFields[0].id)] = JSON.stringify(uploadedImages);
+      }
+
       const payloadParaDB: PayloadFilaDB[] = Object.entries(formValues).map(([campoId, valor]) => {
         const campoIdAsNumber = Number.parseInt(campoId, 10);
         const campo = camposById.get(campoIdAsNumber);
