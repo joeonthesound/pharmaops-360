@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { QrCode } from 'lucide-react';
 import type { Activo } from '@/modules/activos/activos.interface';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
@@ -334,6 +335,16 @@ function isEvidenceValue(respuesta: RespuestaAuditada) {
     fieldType === 'file' ||
     /^https?:\/\//i.test(textValue) ||
     textValue.includes('evidencias-mantenimiento/')
+  );
+}
+
+function isOutOfRangeResponse(respuesta: RespuestaAuditada) {
+  const serializedText = `${respuesta.valor_texto ?? ''} ${respuesta.valor_seleccion ?? ''}`.toLowerCase();
+
+  return (
+    serializedText.includes('"is_out_of_range":true') ||
+    serializedText.includes('"is_out_of_range": true') ||
+    serializedText.includes('fuera de rango')
   );
 }
 
@@ -888,6 +899,335 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
     ],
     ['Fecha de ultimo servicio', activoHVAC?.last_maintenance_date ?? 'No registrada'],
   ];
+
+  if (isReadOnlyDocument) {
+    const statusPanelClass =
+      normalizedStatus === 'approved'
+        ? 'bg-emerald-50 border-y border-emerald-200 text-emerald-900 px-4 py-2 flex items-center justify-between'
+        : 'bg-amber-50 border-y border-amber-200 text-amber-900 px-4 py-2 flex items-center justify-between';
+    const signatureCards = [
+      {
+        title: 'Tecnico',
+        user: maintenanceRecord?.assigned_technician ?? 'No disponible',
+        timestamp: formatDateTimeUtc(maintenanceRecord?.executed_at ?? notes.captured_at),
+        meaning: 'Confeccion del registro tecnico bajo accion afirmativa del operador.',
+      },
+      {
+        title: 'Supervisor',
+        user: maintenanceRecord?.supervisor_signed_by ?? 'Pendiente',
+        timestamp: formatDateTimeUtc(maintenanceRecord?.supervisor_signed_at),
+        meaning: 'Revision de cumplimiento operativo bajo FDA 21 CFR Part 11.',
+      },
+      {
+        title: 'Calidad',
+        user: maintenanceRecord?.quality_signed_by ?? 'Pendiente',
+        timestamp: formatDateTimeUtc(maintenanceRecord?.quality_signed_at),
+        meaning: 'Liberacion documental e inmutabilidad del registro aprobado.',
+      },
+    ];
+
+    return (
+      <main className="h-screen w-full flex flex-col overflow-hidden bg-slate-50 select-none text-slate-950 print:block print:h-auto print:min-h-0 print:overflow-visible print:bg-white print:text-black print:select-text">
+        <style>
+          {`
+            @media print {
+              @page {
+                size: 8.5in 11in;
+                margin: 0.4in 0.4in 0.45in 0.4in;
+              }
+
+              html,
+              body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+                background: #ffffff !important;
+                height: auto !important;
+                overflow: visible !important;
+              }
+
+              * {
+                box-shadow: none !important;
+              }
+            }
+          `}
+        </style>
+
+        <section className="hidden bg-white text-black print:block">
+          <header className="grid grid-cols-[1.25in_1fr] gap-4 border-b border-slate-300 pb-3 text-[10px] leading-tight">
+            <div className="flex h-16 items-center justify-center border border-slate-300 text-[9px] font-bold uppercase text-slate-700">
+              Logo
+            </div>
+            <div className="text-right">
+              <h1 className="text-[13px] font-black uppercase tracking-wide text-black">
+                Labymed S.A. - Planta Central
+              </h1>
+              <p className="mt-1 font-semibold text-slate-700">Operacion HVAC / Reporte Inmutable de Inspeccion</p>
+              <p className="text-slate-600">Direccion: Panama | Tel: +507 0000-0000 | calidad@labymed.com</p>
+              <p className="text-slate-600">Sistema: PharmaOps 360 | Fuente: Supabase SSR / ALCOA+</p>
+            </div>
+          </header>
+
+          <section className="mt-3 border border-slate-300 text-[10px] leading-tight">
+            <div className="grid grid-cols-4">
+              <div className="border-b border-r border-slate-300 p-1.5">
+                <p className="font-black uppercase text-slate-600">Report Unique ID</p>
+                <p className="mt-1 break-all font-mono text-[9px] font-bold text-black">
+                  {maintenanceRecord?.uuid ?? requestedUuid}
+                </p>
+              </div>
+              <div className="border-b border-r border-slate-300 p-1.5">
+                <p className="font-black uppercase text-slate-600">Activo / Codigo</p>
+                <p className="mt-1 font-bold text-black">
+                  {activoHVAC?.asset_name ?? 'Checklist HVAC'} / {activoHVAC?.asset_code ?? 'No disponible'}
+                </p>
+              </div>
+              <div className="border-b border-r border-slate-300 p-1.5">
+                <p className="font-black uppercase text-slate-600">Status</p>
+                <p className="mt-1 font-bold uppercase text-black">{normalizedStatus}</p>
+              </div>
+              <div className="border-b border-slate-300 p-1.5">
+                <p className="font-black uppercase text-slate-600">Ubicacion Fisica</p>
+                <p className="mt-1 font-bold text-black">
+                  {activoHVAC ? formatLocation(activoHVAC) : 'Ubicacion no disponible'}
+                </p>
+              </div>
+              <div className="border-r border-slate-300 p-1.5">
+                <p className="font-black uppercase text-slate-600">Fecha UTC</p>
+                <p className="mt-1 font-bold text-black">
+                  {formatDateTimeUtc(maintenanceRecord?.executed_at ?? notes.captured_at)}
+                </p>
+              </div>
+              <div className="border-r border-slate-300 p-1.5">
+                <p className="font-black uppercase text-slate-600">Plantilla</p>
+                <p className="mt-1 font-bold text-black">
+                  {normalizeUtf8String(notes.template_code ?? 'TMP-HVAC-PM')}
+                </p>
+              </div>
+              <div className="border-r border-slate-300 p-1.5">
+                <p className="font-black uppercase text-slate-600">Marca / Capacidad</p>
+                <p className="mt-1 font-bold text-black">
+                  {activoHVAC?.brand ?? 'No disponible'} /{' '}
+                  {activoHVAC ? `${activoHVAC.capacity} ${activoHVAC.capacity_unit}` : 'No disponible'}
+                </p>
+              </div>
+              <div className="p-1.5">
+                <p className="font-black uppercase text-slate-600">Registro</p>
+                <p className="mt-1 font-bold text-black">
+                  {maintenanceRecord?.record_code ?? 'Sin codigo'}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="mt-3">
+            <h2 className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-black">
+              Datos completos del checklist
+            </h2>
+            <table className="table-auto w-full border-collapse text-left text-[9px] leading-tight">
+              <thead>
+                <tr className="border-y border-slate-400 bg-white">
+                  <th className="w-[38%] px-1.5 py-1 font-black uppercase">Campo</th>
+                  <th className="w-[22%] px-1.5 py-1 font-black uppercase">Valor</th>
+                  <th className="w-[10%] px-1.5 py-1 font-black uppercase">Unidad</th>
+                  <th className="w-[30%] px-1.5 py-1 font-black uppercase">Seccion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orderedResponses.map((respuesta) => {
+                  const responseValue = formatResponseValue(respuesta);
+                  const isOutOfRange = isOutOfRangeResponse(respuesta);
+
+                  return (
+                    <tr className="border-b border-slate-200 align-top" key={`print-flow-${respuesta.field_key}`}>
+                      <td className="px-1.5 py-1 font-semibold text-black">{respuesta.field_label}</td>
+                      <td className="px-1.5 py-1 font-bold text-black">
+                        {isOutOfRange ? (
+                          <span className="font-black underline">* {responseValue}</span>
+                        ) : (
+                          responseValue
+                        )}
+                      </td>
+                      <td className="px-1.5 py-1 font-semibold text-black">{respuesta.unit ?? 'N/A'}</td>
+                      <td className="px-1.5 py-1 text-slate-700">{respuesta.section_name}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="mt-1 text-[8px] font-semibold text-black">
+              * Valor marcado como fuera de rango o con desviacion tecnica documentada.
+            </p>
+          </section>
+
+          <section className="mt-4 grid gap-2 text-[9px] leading-tight">
+            <h2 className="text-[10px] font-black uppercase tracking-wide text-black">
+              Cadena de aprobacion electronica
+            </h2>
+            {signatureCards.map((signature) => (
+              <article className="border border-slate-400 p-2" key={`print-${signature.title}`}>
+                <p className="font-black uppercase text-black">{signature.title}</p>
+                <p>
+                  <span className="font-bold">User ID: </span>
+                  {signature.user}
+                </p>
+                <p>
+                  <span className="font-bold">Timestamp UTC: </span>
+                  {signature.timestamp}
+                </p>
+                <p>
+                  <span className="font-bold">GxP Legal Meaning: </span>
+                  {signature.meaning}
+                </p>
+                <p>
+                  <span className="font-bold">Audit Trail Comments / Observations: </span>
+                  {signature.title === 'Tecnico'
+                    ? notes.technical_observations || 'Sin observaciones registradas'
+                    : maintenanceRecord?.rejection_comments || 'Sin comentarios adicionales registrados'}
+                </p>
+              </article>
+            ))}
+          </section>
+        </section>
+
+        <div className="h-14 shrink-0 border-b bg-white px-4 flex items-center justify-between print:hidden">
+          <Link
+            className="inline-flex h-10 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            href="/dashboard?view=history"
+          >
+            <span aria-hidden="true" className="mr-2">←</span>
+            Volver al Historial Tecnico
+          </Link>
+          <div className="flex items-center gap-2">
+            <PrintReportButton />
+          </div>
+        </div>
+
+        <section className={`${statusPanelClass} print:hidden`}>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">
+              Report Unique ID
+            </p>
+            <p className="truncate text-sm font-black">
+              {maintenanceRecord?.uuid ?? requestedUuid}
+            </p>
+          </div>
+          <div className="hidden text-center sm:block">
+            <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">Activo</p>
+            <p className="text-sm font-black">{activoHVAC?.asset_code ?? 'Sin activo'}</p>
+          </div>
+          <span className="shrink-0 rounded-full border border-current bg-white/70 px-3 py-1 text-xs font-black uppercase tracking-wide">
+            {normalizedStatus}
+          </span>
+        </section>
+
+        <section className="grid flex-1 grid-cols-12 gap-4 p-4 overflow-hidden h-[calc(100vh-7rem)] print:hidden">
+          <div className="col-span-12 flex min-h-0 flex-col gap-3 overflow-hidden lg:col-span-8">
+            <section className="grid shrink-0 gap-2 rounded border border-slate-200 bg-white p-3 text-xs md:grid-cols-3">
+              <div>
+                <p className="font-bold uppercase text-slate-500">Activo</p>
+                <p className="mt-1 font-black text-slate-950">{activoHVAC?.asset_code ?? 'No disponible'}</p>
+                <p className="truncate font-semibold text-slate-600">{activoHVAC?.asset_name ?? 'Checklist HVAC'}</p>
+              </div>
+              <div>
+                <p className="font-bold uppercase text-slate-500">Ubicacion</p>
+                <p className="mt-1 font-semibold text-slate-800">
+                  {activoHVAC ? formatLocation(activoHVAC) : 'Ubicacion no disponible'}
+                </p>
+                <p className="font-semibold text-slate-600">{activoHVAC?.brand ?? 'Marca no disponible'}</p>
+              </div>
+              <div>
+                <p className="font-bold uppercase text-slate-500">Registro</p>
+                <p className="mt-1 font-semibold text-slate-800">
+                  {maintenanceRecord?.record_code ?? 'Sin codigo'}
+                </p>
+                <p className="font-semibold text-slate-600">
+                  {formatDateTimeUtc(maintenanceRecord?.executed_at ?? notes.captured_at)}
+                </p>
+              </div>
+            </section>
+
+            <section className="min-h-0 flex-1 overflow-y-auto max-h-full bg-white rounded border border-slate-200">
+              <table className="w-full border-collapse text-left text-xs">
+                <thead className="sticky top-0 z-10 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-600">
+                  <tr>
+                    <th className="border-b border-slate-200 px-3 py-2 font-black">Campo</th>
+                    <th className="border-b border-slate-200 px-3 py-2 font-black">Valor</th>
+                    <th className="border-b border-slate-200 px-3 py-2 font-black">Unidad</th>
+                    <th className="border-b border-slate-200 px-3 py-2 font-black">Seccion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orderedResponses.map((respuesta) => {
+                    const responseValue = formatResponseValue(respuesta);
+                    const isOutOfRange = isOutOfRangeResponse(respuesta);
+
+                    return (
+                      <tr className="border-b border-slate-100 align-top" key={respuesta.field_key}>
+                        <td className="px-3 py-2 font-bold text-slate-900">{respuesta.field_label}</td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={
+                              isOutOfRange
+                                ? 'inline-flex rounded bg-rose-50 px-2 py-1 text-rose-700 font-bold'
+                                : 'font-semibold text-slate-700'
+                            }
+                          >
+                            {responseValue}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 font-semibold text-slate-600">
+                          {respuesta.unit ?? 'N/A'}
+                        </td>
+                        <td className="px-3 py-2 font-medium text-slate-500">
+                          {respuesta.section_name}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
+          </div>
+
+          <aside className="col-span-12 flex min-h-0 flex-col gap-3 overflow-y-auto lg:col-span-4">
+            {signatureCards.map((signature) => (
+              <article
+                className="rounded border border-slate-200 bg-white p-4 shadow-sm"
+                key={signature.title}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">
+                    {signature.title}
+                  </h2>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">
+                    Firma Electronica
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3 text-sm">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">User ID</p>
+                    <p className="break-all font-bold text-slate-900">{signature.user}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Timestamp UTC</p>
+                    <p className="font-bold text-slate-900">{signature.timestamp}</p>
+                  </div>
+                  <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      GxP Legal Meaning
+                    </p>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-slate-700">
+                      {signature.meaning}
+                    </p>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </aside>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 print:bg-white print:px-0 print:py-0 print:text-black">

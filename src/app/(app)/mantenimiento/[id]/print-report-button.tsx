@@ -10,7 +10,7 @@ export function PrintReportButton() {
       type="button"
     >
       <Printer size={16} />
-      Imprimir Reporte
+      Imprimir / Exportar PDF
     </button>
   );
 }

@@ -4,6 +4,11 @@ import type { Activo, ActivoEstado } from '@/modules/activos/activos.interface';
 
 type DashboardPageProps = {
   searchParams?: Promise<{
+    asset?: string;
+    aging?: string;
+    deviations?: string;
+    q?: string;
+    risk?: string;
     view?: string;
   }>;
 };
@@ -220,24 +225,39 @@ function isClosedWorkflowRecord(registro: MantenimientoRegistro) {
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const currentView = normalizeView(resolvedSearchParams.view);
+  const historySearchTerm = String(resolvedSearchParams.q ?? '');
+  const selectedHistoryAsset = String(resolvedSearchParams.asset ?? '');
+  const showOnlyDeviations = resolvedSearchParams.deviations === 'true';
+  const showAgingSignatures = resolvedSearchParams.aging === '72h';
+  const selectedRiskLevel = resolvedSearchParams.risk === 'high' ? 'high' : 'all';
   let dashboardOrders: DashboardOrder[] = [];
   let queryError: { code?: string; message?: string } | null = null;
+  const effectiveExcludedStatuses =
+    currentView === 'history' ? [] : CLOSED_WORKFLOW_STATUSES;
 
   console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 1 [Llamada a Ordenes Activas]', {
     table: 'mantenimientos_registros',
     select: '*, activos(*)',
-    status: ACTIVE_WORKFLOW_STATUSES,
-    excludedStatus: CLOSED_WORKFLOW_STATUSES,
+    status: currentView === 'history' ? ['approved'] : ACTIVE_WORKFLOW_STATUSES,
+    excludedStatus: effectiveExcludedStatuses,
+    view: currentView,
   });
 
   try {
-    const { data: registrosData, error: registrosError } = await supabase
+    let registrosQuery = supabase
       .from('mantenimientos_registros')
       .select('*, activos!fk_mantenimientos_registros_activos(*)')
-      .in('status', ACTIVE_WORKFLOW_STATUSES)
-      .not('status', 'in', CLOSED_STATUS_FILTER)
-      .is('quality_signed_at', null)
       .order('executed_at', { ascending: false });
+
+    registrosQuery =
+      currentView === 'history'
+        ? registrosQuery.eq('status', 'approved')
+        : registrosQuery
+            .in('status', ACTIVE_WORKFLOW_STATUSES)
+            .not('status', 'in', CLOSED_STATUS_FILTER)
+            .is('quality_signed_at', null);
+
+    const { data: registrosData, error: registrosError } = await registrosQuery;
 
     if (registrosError) {
       queryError = {
@@ -253,9 +273,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         },
       });
     } else {
-      dashboardOrders = ((registrosData ?? []) as DashboardOrder[]).filter(
-        (registro) => !isClosedWorkflowRecord(registro),
-      );
+      dashboardOrders =
+        currentView === 'history'
+          ? ((registrosData ?? []) as DashboardOrder[])
+          : ((registrosData ?? []) as DashboardOrder[]).filter(
+              (registro) => !isClosedWorkflowRecord(registro),
+            );
     }
 
     console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 2 [Resultado / Respuesta del Servidor]', {
@@ -269,6 +292,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         asset_code: registro.asset_code,
         status: registro.status,
       })),
+      appliedHistoryFilters: {
+        q: historySearchTerm,
+        asset: selectedHistoryAsset,
+        deviations: showOnlyDeviations,
+        aging: showAgingSignatures,
+        risk: selectedRiskLevel,
+      },
     });
   } catch (error) {
     queryError = {
@@ -290,15 +320,40 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const rejectedOrders = dashboardOrders.filter(
     (registro) => REJECTED_STATUSES.includes(registro.status),
   );
-  const historyOrders: DashboardOrder[] = [];
+  const historyOrders =
+    currentView === 'history'
+      ? dashboardOrders
+      : dashboardOrders.filter((registro) => registro.status === 'approved');
+  const normalizedHistorySearchTerm = historySearchTerm.trim().toLowerCase();
+  const filteredHistoryOrders = historyOrders.filter((registro) => {
+    const activo = resolveRelatedAsset(registro);
+    const matchesSearch =
+      !normalizedHistorySearchTerm ||
+      registro.uuid.toLowerCase() === normalizedHistorySearchTerm ||
+      String(registro.uuid).toLowerCase().includes(normalizedHistorySearchTerm) ||
+      String(registro.asset_code ?? '').toLowerCase().includes(normalizedHistorySearchTerm) ||
+      String(activo?.asset_code ?? '').toLowerCase().includes(normalizedHistorySearchTerm);
+    const matchesAsset =
+      !selectedHistoryAsset ||
+      (activo?.asset_code ?? registro.asset_code ?? '') === selectedHistoryAsset;
+
+    return matchesSearch && matchesAsset;
+  });
   const visibleOrders =
     currentView === 'pending'
       ? pendingOrders
       : currentView === 'sent'
         ? sentOrders
         : currentView === 'history'
-          ? historyOrders
+          ? filteredHistoryOrders
         : rejectedOrders;
+  const historyAssetOptions = Array.from(
+    new Set(
+      historyOrders
+        .map((registro) => resolveRelatedAsset(registro)?.asset_code ?? registro.asset_code)
+        .filter((assetCode): assetCode is string => Boolean(assetCode)),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950">
@@ -348,13 +403,167 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         ) : null}
 
+        {!queryError && currentView === 'history' ? (
+          <section
+            aria-label="Filtros de historial tecnico"
+            className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm"
+          >
+            <form className="grid gap-4" method="get">
+              <input name="view" type="hidden" value="history" />
+              <div className="grid gap-3 md:grid-cols-[1fr_190px_190px_auto]">
+                <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  <span>{`C\u00f3digo de Reporte / UUID`}</span>
+                  <input
+                    className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                    defaultValue={historySearchTerm}
+                    name="q"
+                    placeholder={`Buscar por C\u00f3digo de Reporte o UUID`}
+                    type="search"
+                  />
+                </label>
+
+                <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  <span>Filtrar por Activo</span>
+                  <select
+                    className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                    defaultValue={selectedHistoryAsset}
+                    name="asset"
+                  >
+                    <option value="">Todos los activos</option>
+                    {historyAssetOptions.map((assetCode) => (
+                      <option key={assetCode} value={assetCode}>
+                        {assetCode}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  <span>Riesgo</span>
+                  <select
+                    className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                    defaultValue={selectedRiskLevel}
+                    name="risk"
+                  >
+                    <option value="all">Todos</option>
+                    <option value="high">Alta Criticidad</option>
+                  </select>
+                </label>
+
+                <button
+                  className="flex h-11 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 md:self-end"
+                  type="submit"
+                >
+                  Aplicar
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 md:flex-row md:items-end md:justify-between">
+                <div className="flex flex-wrap gap-2">
+                  <label
+                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm font-semibold transition ${
+                      showOnlyDeviations
+                        ? 'border-transparent bg-slate-900 text-white shadow-sm'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <input
+                      className="sr-only"
+                      defaultChecked={showOnlyDeviations}
+                      name="deviations"
+                      type="checkbox"
+                      value="true"
+                    />
+                    <span aria-hidden="true">{`\u26a0\ufe0f`}</span>
+                    <span>Ver solo Desviaciones (Fuera de Rango)</span>
+                  </label>
+
+                  <label
+                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm font-semibold transition ${
+                      showAgingSignatures
+                        ? 'border-transparent bg-slate-900 text-white shadow-sm'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <input
+                      className="sr-only"
+                      defaultChecked={showAgingSignatures}
+                      name="aging"
+                      type="checkbox"
+                      value="72h"
+                    />
+                    <span aria-hidden="true">{`\u23f3`}</span>
+                    <span>Firmas Pendientes &gt; 72h</span>
+                  </label>
+                </div>
+              </div>
+            </form>
+          </section>
+        ) : null}
+
         {!queryError && visibleOrders.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700 shadow-sm">
             No hay ordenes en esta pestana segun el estado transaccional actual.
           </div>
         ) : null}
 
-        {!queryError ? (
+        {!queryError && currentView === 'history' && visibleOrders.length > 0 ? (
+          <section aria-label="Historial tecnico aprobado" className="grid gap-3">
+            {visibleOrders.map((registro) => {
+              const activo = resolveRelatedAsset(registro);
+              const displayAssetCode =
+                activo?.asset_code ?? registro.asset_code ?? 'Activo no disponible';
+              const displayAssetName = activo?.asset_name ?? 'Orden de mantenimiento aprobada';
+              const displayLocation = formatLocation(activo);
+              const actionHref = getOrderHref(registro, activo);
+
+              return (
+                <article
+                  className="grid gap-3 rounded-lg border border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm md:grid-cols-[1.1fr_1fr_auto] md:items-center"
+                  key={registro.uuid}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-bold tracking-normal text-slate-950">
+                        {displayAssetCode}
+                      </p>
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide ${orderStatusClasses[registro.status]}`}
+                      >
+                        {orderStatusLabel[registro.status]}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-700">
+                      {displayAssetName}
+                    </p>
+                    <p className="mt-1 truncate text-xs font-medium text-slate-500">
+                      UUID: {registro.uuid}
+                    </p>
+                  </div>
+
+                  <div className="grid gap-1 text-sm text-slate-700">
+                    <span className="font-semibold text-slate-900">{displayLocation}</span>
+                    <span className="text-xs font-medium text-slate-500">
+                      Fecha de ejecucion: {registro.executed_at ?? 'No registrada'}
+                    </span>
+                    <span className="text-xs font-medium text-slate-500">
+                      Firma Calidad: {registro.quality_signed_at ?? 'No registrada'}
+                    </span>
+                  </div>
+
+                  <Link
+                    className="flex min-h-11 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-bold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    href={actionHref}
+                  >
+                    Ver Reporte Inmutable
+                  </Link>
+                </article>
+              );
+            })}
+          </section>
+        ) : null}
+
+        {!queryError && currentView !== 'history' ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {visibleOrders.map((registro) => {
               const activo = resolveRelatedAsset(registro);
