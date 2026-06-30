@@ -11,6 +11,11 @@ const segmentLabels: Record<string, string> = {
   mantenimiento: 'MANTENIMIENTO',
   hvac: 'HVAC',
   activos: 'ACTIVOS',
+  rui: 'RUI',
+  ht: 'HISTORIAL TECNICO (HT)',
+  activo: 'DOCUMENTO ACTIVO',
+  enviado: 'REPORTE ENVIADO',
+  rechazado: 'REPORTE RECHAZADO',
   aprobar: 'APROBACION',
 };
 
@@ -35,29 +40,38 @@ export default function MantenimientoLayout({ children }: MantenimientoLayoutPro
 
   return (
     <div className="bg-slate-50">
-      <nav
-        aria-label="Ruta de mantenimiento"
-        className="border-b border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-600 print:hidden md:text-sm"
-      >
-        <ol className="flex flex-wrap items-center gap-2">
-          {breadcrumbs.map((breadcrumb, index) => {
-            const isLast = index === breadcrumbs.length - 1;
+      <div className="px-4 py-3 print:hidden">
+        <div className="flex h-11 max-w-xl items-center rounded-md border border-slate-200 bg-slate-50 px-4 text-sm text-slate-600">
+          <nav aria-label="Ruta de mantenimiento" className="min-w-0">
+            <ol className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold md:text-sm">
+              {breadcrumbs.map((breadcrumb, index) => {
+                const isLast = index === breadcrumbs.length - 1;
 
-            return (
-              <li className="flex items-center gap-2" key={`${breadcrumb.href}-${breadcrumb.label}`}>
-                {index > 0 ? <span className="text-slate-300">/</span> : null}
-                {isLast ? (
-                  <span className="text-slate-950">{breadcrumb.label}</span>
-                ) : (
-                  <Link className="transition hover:text-slate-950" href={breadcrumb.href}>
-                    {breadcrumb.label}
-                  </Link>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      </nav>
+                return (
+                  <li
+                    className="flex min-w-0 items-center gap-2"
+                    key={`${breadcrumb.href}-${breadcrumb.label}`}
+                  >
+                    {index > 0 ? <span className="text-slate-300">/</span> : null}
+                    {isLast ? (
+                      <span className="max-w-48 truncate text-slate-950">
+                        {breadcrumb.label}
+                      </span>
+                    ) : (
+                      <Link
+                        className="max-w-40 truncate transition hover:text-slate-950"
+                        href={breadcrumb.href}
+                      >
+                        {breadcrumb.label}
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
+        </div>
+      </div>
 
       {children}
     </div>

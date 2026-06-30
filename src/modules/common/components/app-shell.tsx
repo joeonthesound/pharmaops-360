@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { useParams, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { Bell, Menu } from 'lucide-react';
 import { Sidebar } from './sidebar';
 
@@ -10,13 +9,6 @@ type AppShellProps = {
   children: React.ReactNode;
   currentRole: string;
   currentUserName: string;
-};
-
-type MaintenanceRouteParams = {
-  area?: string;
-  docType?: string;
-  id?: string;
-  status?: string;
 };
 
 function getInitials(name: string) {
@@ -28,57 +20,6 @@ function getInitials(name: string) {
     .join('');
 }
 
-const breadcrumbLabels: Record<string, string> = {
-  mantenimiento: 'MANTENIMIENTO',
-  hvac: 'HVAC',
-  activos: 'ACTIVOS',
-  rui: 'RUI',
-  RUI: 'RUI',
-  ht: 'HISTORIAL TECNICO (HT)',
-  activo: 'DOCUMENTO ACTIVO',
-  enviado: 'REPORTE ENVIADO',
-  rechazado: 'REPORTE RECHAZADO',
-  aprobar: 'APROBACION',
-  dashboard: 'DASHBOARD',
-  admin: 'ADMIN',
-  usuarios: 'USUARIOS',
-};
-
-function formatBreadcrumbSegment(segment: string) {
-  return breadcrumbLabels[segment] ?? decodeURIComponent(segment).replaceAll('-', ' ').toUpperCase();
-}
-
-function buildBreadcrumbs(pathname: string, params: MaintenanceRouteParams) {
-  const segments = pathname.split('/').filter(Boolean);
-  const normalizedSegments = segments.map((segment) => {
-    if (params.area && segment === params.area) {
-      return params.area;
-    }
-
-    if (params.docType && segment === params.docType) {
-      return params.docType;
-    }
-
-    if (params.id && segment === params.id) {
-      return params.id;
-    }
-
-    if (params.status && segment === params.status) {
-      return params.status;
-    }
-
-    return segment;
-  });
-
-  return [
-    { href: '/', label: 'Planta Central' },
-    ...normalizedSegments.map((segment, index) => ({
-      href: `/${normalizedSegments.slice(0, index + 1).join('/')}`,
-      label: formatBreadcrumbSegment(segment),
-    })),
-  ];
-}
-
 function isTechnicianRole(role: string) {
   const normalizedRole = role.toLowerCase();
 
@@ -88,8 +29,6 @@ function isTechnicianRole(role: string) {
 export function AppShell({ children, currentRole, currentUserName }: AppShellProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const pathname = usePathname();
-  const routeParams = useParams<MaintenanceRouteParams>();
-  const breadcrumbs = buildBreadcrumbs(pathname, routeParams);
   const initials = getInitials(currentUserName || 'P360') || 'P';
   const isTechnicianProfile = isTechnicianRole(currentRole);
   const profileContainerClass = isTechnicianProfile
@@ -131,38 +70,7 @@ export function AppShell({ children, currentRole, currentUserName }: AppShellPro
               <Menu aria-hidden="true" size={20} />
             </button>
 
-            <div className="hidden min-w-0 flex-1 md:block">
-              <div className="flex h-11 max-w-xl items-center rounded-md border border-slate-200 bg-slate-50 px-4 text-sm text-slate-600">
-                <nav aria-label="Ruta de mantenimiento" className="min-w-0">
-                  <ol className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold md:text-sm">
-                    {breadcrumbs.map((breadcrumb, index) => {
-                      const isLast = index === breadcrumbs.length - 1;
-
-                      return (
-                        <li
-                          className="flex min-w-0 items-center gap-2"
-                          key={`${breadcrumb.href}-${breadcrumb.label}`}
-                        >
-                          {index > 0 ? <span className="text-slate-300">/</span> : null}
-                          {isLast ? (
-                            <span className="max-w-48 truncate text-slate-950">
-                              {breadcrumb.label}
-                            </span>
-                          ) : (
-                            <Link
-                              className="max-w-40 truncate transition hover:text-slate-950"
-                              href={breadcrumb.href}
-                            >
-                              {breadcrumb.label}
-                            </Link>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ol>
-                </nav>
-              </div>
-            </div>
+            <div className="hidden min-w-0 flex-1 md:block" />
 
             <div className="min-w-0 flex-1 md:hidden">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">

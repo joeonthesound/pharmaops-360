@@ -31,7 +31,8 @@ type SidebarProps = {
   currentPath?: string;
 };
 
-const MAINTENANCE_ACTIVE_CLASS = 'bg-slate-950 border-l-2 border-[#C76E00] text-white';
+const MAINTENANCE_ACTIVE_CLASS =
+  'bg-[#C76E00] border-l-2 border-[#C76E00] text-blue-900 hover:bg-[#C76E00]';
 
 const iconMap = {
   AlertTriangle,
@@ -131,13 +132,15 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
     const hasActiveChild = hasActiveDescendant(node);
     const isOpen = Boolean(openMenus[node.title]) || isNodeRouteOpen(node) || hasActiveChild;
     const isActive = isNodeActive(node);
+    const isMaintenanceRoute = currentPath.startsWith('/mantenimiento');
+    const isMaintenanceTreeNode = isMaintenanceRoute && isMaintenanceNode(node);
     const isMaintenanceActive =
-      currentPath.startsWith('/mantenimiento') &&
-      isMaintenanceNode(node) &&
-      (isActive || isOpen || hasActiveChild);
+      isMaintenanceTreeNode && (isActive || isOpen || hasActiveChild || depth > 0);
     const activeClass = isMaintenanceActive ? MAINTENANCE_ACTIVE_CLASS : theme.itemActive;
+    const activeTextClass = isMaintenanceActive ? 'text-blue-900' : theme.text;
+    const iconClass = isMaintenanceActive ? 'text-blue-900' : theme.mutedText;
     const paddingClass = depth === 0 ? 'px-3' : depth === 1 ? 'pl-4 pr-3' : 'pl-8 pr-3';
-    const itemClass = `${paddingClass} flex min-h-11 w-full items-center justify-between rounded-md py-2 text-left text-sm font-semibold transition ${theme.text} ${
+    const itemClass = `${paddingClass} flex min-h-11 w-full items-center justify-between rounded-md py-2 text-left text-sm font-semibold transition ${activeTextClass} ${
       isActive || isMaintenanceActive ? activeClass : theme.item
     }`;
 
@@ -147,7 +150,7 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
           <div className={itemClass}>
             {node.href ? (
               <Link className="flex min-w-0 flex-1 items-center gap-3" href={node.href}>
-                <NavigationIcon className={theme.mutedText} name={node.icon} />
+                <NavigationIcon className={iconClass} name={node.icon} />
                 <span className="truncate">{node.title}</span>
               </Link>
             ) : (
@@ -156,7 +159,7 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
                 onClick={() => toggleMenu(node.title)}
                 type="button"
               >
-                <NavigationIcon className={theme.mutedText} name={node.icon} />
+                <NavigationIcon className={iconClass} name={node.icon} />
                 <span className="truncate">{node.title}</span>
               </button>
             )}
@@ -168,7 +171,7 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
             >
               <ChevronDown
                 aria-hidden="true"
-                className={`transition ${theme.mutedText} ${isOpen ? 'rotate-180' : ''}`}
+                className={`transition ${iconClass} ${isOpen ? 'rotate-180' : ''}`}
                 size={16}
               />
             </button>
@@ -189,7 +192,7 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
     return (
       <Link className={itemClass} href={node.href} key={node.title}>
         <span className="flex items-center gap-3">
-          <NavigationIcon className={theme.mutedText} name={node.icon} />
+          <NavigationIcon className={iconClass} name={node.icon} />
           {node.title}
         </span>
       </Link>
