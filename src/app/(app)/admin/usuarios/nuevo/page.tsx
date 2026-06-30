@@ -1,6 +1,8 @@
 import { assertRootAdminAccess } from '@/modules/usuarios-roles/user-admin.actions';
 import { UserForm } from '../user-form';
 
+export const runtime = 'edge';
+
 export default async function NuevoUsuarioPage() {
   await assertRootAdminAccess();
 

@@ -2,6 +2,8 @@
 import { supabase } from '@/shared/lib/supabase';
 import type { Activo, ActivoEstado } from '@/modules/activos/activos.interface';
 
+export const runtime = 'edge';
+
 type DashboardPageProps = {
   searchParams?: Promise<{
     asset?: string;

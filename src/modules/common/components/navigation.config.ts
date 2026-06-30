@@ -44,8 +44,8 @@ export const DEFAULT_SIDEBAR_THEME = ROLE_SIDEBAR_THEME.Administrativo;
 
 export const NAVIGATION_TREE: NavigationNode[] = [
   {
-    title: 'Dashboard',
-    href: '/dashboard',
+    title: 'Mantenimientos',
+    href: '/mantenimiento',
     icon: 'LayoutDashboard',
     rolesAllowed: [
       'Administrador',
@@ -57,23 +57,37 @@ export const NAVIGATION_TREE: NavigationNode[] = [
       'Producción',
       'Temporal',
     ],
-  },
-  {
-    title: 'Mantenimiento HVAC',
-    icon: 'Wrench',
-    rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo', 'Temporal'],
     children: [
       {
-        title: 'Activos HVAC',
-        href: '/dashboard?view=pending',
-        icon: 'ClipboardCheck',
+        title: 'HVAC',
+        icon: 'Wrench',
         rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo', 'Temporal'],
-      },
-      {
-        title: 'Enviados',
-        href: '/dashboard?view=sent',
-        icon: 'ShieldCheck',
-        rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
+        children: [
+          {
+            title: 'Activos',
+            href: '/dashboard?view=pending',
+            icon: 'Package',
+            rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo', 'Temporal'],
+          },
+          {
+            title: 'Enviados',
+            href: '/dashboard?view=sent',
+            icon: 'Send',
+            rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
+          },
+          {
+            title: 'Rechazados',
+            href: '/dashboard?view=rejected',
+            icon: 'AlertTriangle',
+            rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
+          },
+          {
+            title: 'Historial',
+            href: '/dashboard?view=history',
+            icon: 'History',
+            rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
+          },
+        ],
       },
     ],
   },

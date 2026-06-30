@@ -1,6 +1,8 @@
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { ApprovalActionsPanel } from './approval-actions-panel';
 
+export const runtime = 'edge';
+
 type AprobarPageProps = {
   params: Promise<{
     id: string;

@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import { AppShell } from '@/modules/common/components';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 
+export const runtime = 'edge';
+
 type AppLayoutProps = {
   children: React.ReactNode;
 };

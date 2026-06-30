@@ -6,6 +6,8 @@ import { ChecklistForm } from './checklist-form';
 import { PrintReportButton } from './print-report-button';
 import { SignatureReviewCard } from './signature-review-card';
 
+export const runtime = 'edge';
+
 type ActivoConUuid = Activo & {
   uuid: string;
 };
