@@ -344,27 +344,35 @@ function getEvidenceLabel(value: string) {
   return parts.at(-1) ?? value;
 }
 
-async function insertResubmissionAuditEvent({
+async function insertChecklistAuditEvent({
   supabase,
   recordUuid,
   operatorEmail,
   timestampUtc,
+  action,
+  comments,
 }: {
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
   recordUuid: string;
   operatorEmail: string | null;
   timestampUtc: string;
+  action: 'INITIAL_SAVE' | 'SUBMISSION' | 'RE-SUBMISSION';
+  comments: string;
 }) {
   const { error } = await supabase.from('audit_trail').insert({
     entity: 'mantenimientos_registros',
     entity_uuid: recordUuid,
-    accion: 'RE-SUBMISSION',
+    accion: action,
     usuario: operatorEmail,
     timestamp: timestampUtc,
-    comentarios: 'RE-SUBMISSION: Datos corregidos por el operador',
+    comentarios: comments,
   });
 
   return error;
+}
+
+function isDraftStatus(status: string | null | undefined) {
+  return status === 'draft' || status === 'Borrador';
 }
 
 function resolveStatusBanner(status: MaintenanceStatus) {
@@ -524,7 +532,8 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
     const normalizedAssetCode = normalizeUtf8String(activoValidado.asset_code);
 
     let cabeceraMantenimiento: MantenimientoCabecera | null = null;
-    const isResubmission = Boolean(maintenanceRecordUuid);
+    let auditAction: 'SUBMISSION' | 'RE-SUBMISSION' = 'SUBMISSION';
+    let shouldClearRejectedState = false;
 
     if (maintenanceRecordUuid) {
       const { data: cabeceraExistente, error: cabeceraExistenteError } = await supabase
@@ -536,9 +545,9 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
       if (cabeceraExistenteError || !cabeceraExistente) {
         return {
           ok: false,
-          message: 'No fue posible localizar la orden rechazada para subsanacion.',
+          message: 'No fue posible localizar la orden de mantenimiento para guardar la inspeccion.',
           debug: {
-            stage: 'resubmission_record_lookup',
+            stage: 'maintenance_record_lookup',
             asset_uuid: assetUuid,
             maintenance_record_uuid: maintenanceRecordUuid,
             supabase_error: sanitizeSupabaseError(cabeceraExistenteError),
@@ -546,34 +555,39 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
         };
       }
 
-      const cabeceraRechazada = cabeceraExistente as MantenimientoCabecera;
+      const cabeceraExistenteValidada = cabeceraExistente as MantenimientoCabecera;
 
-      if (cabeceraRechazada.status !== 'rejected') {
+      if (!isDraftStatus(cabeceraExistenteValidada.status) && cabeceraExistenteValidada.status !== 'rejected') {
         return {
           ok: false,
-          message: 'La orden no esta en estado rejected; no aplica subsanacion.',
+          message: 'La orden no esta en un estado editable para guardar la inspeccion.',
           debug: {
-            stage: 'resubmission_status_validation',
+            stage: 'maintenance_record_status_validation',
             maintenance_record_uuid: maintenanceRecordUuid,
-            status: cabeceraRechazada.status,
+            status: cabeceraExistenteValidada.status,
           },
         };
       }
 
-      if (normalizeUtf8String(cabeceraRechazada.asset_code) !== normalizedAssetCode) {
+      if (normalizeUtf8String(cabeceraExistenteValidada.asset_code) !== normalizedAssetCode) {
         return {
           ok: false,
-          message: 'La orden rechazada no corresponde al activo solicitado.',
+          message: 'La orden de mantenimiento no corresponde al activo solicitado.',
           debug: {
-            stage: 'resubmission_asset_validation',
+            stage: 'maintenance_record_asset_validation',
             maintenance_record_uuid: maintenanceRecordUuid,
             expected_asset_code: normalizedAssetCode,
-            received_asset_code: cabeceraRechazada.asset_code,
+            received_asset_code: cabeceraExistenteValidada.asset_code,
           },
         };
       }
 
-      cabeceraMantenimiento = cabeceraRechazada;
+      if (cabeceraExistenteValidada.status === 'rejected') {
+        auditAction = 'RE-SUBMISSION';
+        shouldClearRejectedState = true;
+      }
+
+      cabeceraMantenimiento = cabeceraExistenteValidada;
     } else {
       console.log(
         '[AUDITORIA INFRAESTRUCTURA P360] Intentando insercion en mantenimientos_registros con payload:',
@@ -683,39 +697,46 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
       }
     }
 
-    if (isResubmission) {
-      const auditError = await insertResubmissionAuditEvent({
-        supabase,
-        recordUuid: cabeceraMantenimiento.uuid,
-        operatorEmail: technicianEmail,
-        timestampUtc: new Date().toISOString(),
-      });
+    const auditError = await insertChecklistAuditEvent({
+      supabase,
+      recordUuid: cabeceraMantenimiento.uuid,
+      operatorEmail: technicianEmail,
+      timestampUtc: new Date().toISOString(),
+      action: auditAction,
+      comments:
+        auditAction === 'RE-SUBMISSION'
+          ? 'RE-SUBMISSION: Datos corregidos por el operador'
+          : 'SUBMISSION: Registro enviado por el operador a revision de Supervisor',
+    });
 
-      if (auditError) {
-        console.error('[FALLO ATOMICO EN COMPUERTA GxP]:', auditError);
+    if (auditError) {
+      console.error('[FALLO ATOMICO EN COMPUERTA GxP]:', auditError);
 
-        return {
-          ok: false,
-          message: 'No fue posible registrar el evento RE-SUBMISSION en audit_trail.',
-          debug: {
-            stage: 'audit_trail_resubmission_insert',
-            asset_uuid: assetUuid,
-            cabecera_uuid: cabeceraMantenimiento.uuid,
-            supabase_error: sanitizeSupabaseError(auditError),
-          },
-        };
-      }
+      return {
+        ok: false,
+        message: 'No fue posible registrar el evento de envio en audit_trail.',
+        debug: {
+          stage:
+            auditAction === 'RE-SUBMISSION'
+              ? 'audit_trail_resubmission_insert'
+              : 'audit_trail_submission_insert',
+          asset_uuid: assetUuid,
+          cabecera_uuid: cabeceraMantenimiento.uuid,
+          audit_action: auditAction,
+          supabase_error: sanitizeSupabaseError(auditError),
+        },
+      };
     }
 
     const { error: statusUpdateError } = await supabase
       .from('mantenimientos_registros')
       .update({
         status: 'pending_supervisor',
-        rejection_comments: isResubmission ? null : undefined,
-        supervisor_signed_by: isResubmission ? null : undefined,
-        supervisor_signed_at: isResubmission ? null : undefined,
-        quality_signed_by: isResubmission ? null : undefined,
-        quality_signed_at: isResubmission ? null : undefined,
+        rejection_comments: shouldClearRejectedState ? null : undefined,
+        supervisor_signed_by: shouldClearRejectedState ? null : undefined,
+        supervisor_signed_at: shouldClearRejectedState ? null : undefined,
+        quality_signed_by: shouldClearRejectedState ? null : undefined,
+        quality_signed_at: shouldClearRejectedState ? null : undefined,
       })
       .eq('uuid', cabeceraMantenimiento.uuid);
 
