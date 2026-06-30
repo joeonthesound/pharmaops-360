@@ -98,11 +98,27 @@ const orderStatusLabel: Record<MantenimientoRegistro['status'], string> = {
   Cerrado: 'Cerrado',
 };
 
-const tabs: Array<{ label: string; value: DashboardView }> = [
-  { label: 'Activos / Ordenes Pendientes', value: 'pending' },
-  { label: 'Activos / Ordenes Enviados', value: 'sent' },
-  { label: 'Activos / Ordenes Rechazados', value: 'rejected' },
-  { label: 'Historial Tecnico', value: 'history' },
+const tabs: Array<{ href: string; label: string; value: DashboardView }> = [
+  {
+    href: '/mantenimiento/hvac/rui/activo',
+    label: 'Activos / Ordenes Pendientes',
+    value: 'pending',
+  },
+  {
+    href: '/mantenimiento/hvac/rui/enviado',
+    label: 'Activos / Ordenes Enviados',
+    value: 'sent',
+  },
+  {
+    href: '/mantenimiento/hvac/rui/rechazado',
+    label: 'Activos / Ordenes Rechazados',
+    value: 'rejected',
+  },
+  {
+    href: '/mantenimiento/hvac/rui/ht',
+    label: 'Historial Tecnico',
+    value: 'history',
+  },
 ];
 
 const SENT_STATUSES: Array<MantenimientoRegistro['status']> = [
@@ -204,7 +220,7 @@ function getOrderHref(registro: MantenimientoRegistro, activo?: ActivoConUuid) {
     return `/mantenimiento/hvac/rui/activo/${activo.uuid}`;
   }
 
-  return '/mantenimiento/hvac/activos';
+  return '/mantenimiento/hvac/rui/activo';
 }
 
 function getOrderActionLabel(status: MantenimientoRegistro['status']) {
@@ -389,7 +405,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </button>
         </header>
 
-        <nav className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:grid-cols-3">
+        <nav className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:grid-cols-4">
           {tabs.map((tab) => {
             const isActive = currentView === tab.value;
 
@@ -400,7 +416,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     ? 'bg-slate-900 text-white'
                     : 'bg-white text-slate-700 hover:bg-slate-100'
                 }`}
-                href={`/mantenimiento/hvac/activos?view=${tab.value}`}
+                href={tab.href}
                 key={tab.value}
               >
                 {tab.label}
@@ -421,7 +437,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm"
           >
             <form className="grid gap-4" method="get">
-              <input name="view" type="hidden" value="history" />
               <div className="grid gap-3 md:grid-cols-[1fr_190px_190px_auto]">
                 <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-600">
                   <span>{`C\u00f3digo de Reporte / UUID`}</span>

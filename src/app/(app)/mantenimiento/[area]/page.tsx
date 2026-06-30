@@ -1092,7 +1092,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         <div className="h-14 shrink-0 border-b bg-white px-4 flex items-center justify-between print:hidden">
           <Link
             className="inline-flex h-10 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
-            href="/dashboard?view=history"
+            href="/mantenimiento/hvac/rui/ht"
           >
             <span aria-hidden="true" className="mr-2">←</span>
             Volver al Historial Tecnico
