@@ -1,11 +1,13 @@
 'use server';
 
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
+import { supabase as publicSupabase } from '@/shared/lib/supabase';
 
 type HvacAssetRow = {
   uuid: string;
   asset_code: string;
   asset_name: string;
+  asset_type: string | null;
   area: string | null;
   site: string | null;
   brand: string | null;
@@ -44,10 +46,13 @@ type FormularioRespuestaRow = {
 };
 
 type HealthStatus = 'Healthy' | 'Attention' | 'Critical';
+type MaintenanceStatusTone = 'green' | 'amber' | 'red' | 'slate';
 
 type HvacDashboardAsset = HvacAssetRow & {
   healthStatus: HealthStatus;
   latestMaintenanceStatus: string | null;
+  latestMaintenanceDisplayLabel: string;
+  latestMaintenanceTone: MaintenanceStatusTone;
   latestMaintenanceExecutedAt: string | null;
   latestMaintenanceScheduledDate: string | null;
   primaryFilterModel: string | null;
@@ -68,6 +73,9 @@ export type HvacDashboardPayload = {
   healthScore: number;
   formulariosRespuestasTotal: number;
 };
+
+const HVAC_ACTIVOS_SELECT =
+  'uuid, asset_code, asset_name, status, asset_type, area, site, brand, model, location_detail, installation_date, last_maintenance_date, next_maintenance_date';
 
 function getMaintenanceSortValue(row: MantenimientoRegistroRow) {
   const candidateDate = row.executed_at ?? row.scheduled_date;
@@ -93,6 +101,39 @@ function getHealthStatus(status: string | null | undefined): HealthStatus {
   }
 
   return 'Critical';
+}
+
+function getLatestMaintenanceDisplay(status: string | null | undefined): {
+  label: string;
+  tone: MaintenanceStatusTone;
+} {
+  const normalizedStatus = String(status ?? '').trim();
+
+  if (normalizedStatus === 'approved') {
+    return {
+      label: 'Last Maintenance: Approved',
+      tone: 'green',
+    };
+  }
+
+  if (normalizedStatus === 'En revision') {
+    return {
+      label: 'En Revisión',
+      tone: 'amber',
+    };
+  }
+
+  if (!normalizedStatus) {
+    return {
+      label: 'Sin historial',
+      tone: 'slate',
+    };
+  }
+
+  return {
+    label: normalizedStatus,
+    tone: 'red',
+  };
 }
 
 function groupMantenimientosByAssetCode(rows: MantenimientoRegistroRow[]) {
@@ -211,11 +252,10 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
   const [activosResult, mantenimientosResult, respuestasResult] = await Promise.all([
     supabase
       .from('activos')
-      .select(
-        'uuid, asset_code, asset_name, area, site, brand, model, status, location_detail, installation_date, last_maintenance_date, next_maintenance_date',
-      )
-      .ilike('area', '%hvac%')
-      .order('asset_code', { ascending: true }),
+      .select(HVAC_ACTIVOS_SELECT, { count: 'exact' })
+      .ilike('asset_type', '%hvac%')
+      .order('asset_code', { ascending: true })
+      .range(0, 8),
     supabase
       .from('mantenimientos_registros')
       .select('id, asset_code, status, scheduled_date, executed_at'),
@@ -230,6 +270,24 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
     throw new Error(`No se pudieron consultar los activos HVAC: ${activosResult.error.message}`);
   }
 
+  const publicActivosResult =
+    (activosResult.data ?? []).length === 0
+      ? await publicSupabase
+          .from('activos')
+          .select(HVAC_ACTIVOS_SELECT, { count: 'exact' })
+          .ilike('asset_type', '%hvac%')
+          .order('asset_code', { ascending: true })
+          .range(0, 8)
+      : null;
+
+  if (publicActivosResult?.error) {
+    console.error('[HVAC DASHBOARD] Fallback publico de activos fallo', {
+      code: publicActivosResult.error.code,
+      message: publicActivosResult.error.message,
+      hint: publicActivosResult.error.hint,
+    });
+  }
+
   if (mantenimientosResult.error) {
     throw new Error(
       `No se pudieron consultar los mantenimientos: ${mantenimientosResult.error.message}`,
@@ -242,7 +300,11 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
     );
   }
 
-  const activosData = (activosResult.data ?? []) as HvacAssetRow[];
+  const activosData = (
+    publicActivosResult?.data && publicActivosResult.data.length > 0
+      ? publicActivosResult.data
+      : activosResult.data ?? []
+  ) as HvacAssetRow[];
   const mantenimientosData = (mantenimientosResult.data ?? []) as MantenimientoRegistroRow[];
   const formulariosRespuestasData = (respuestasResult.data ?? []) as FormularioRespuestaRow[];
   const mantenimientosByAssetCode = groupMantenimientosByAssetCode(mantenimientosData);
@@ -252,6 +314,7 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
     const assetMantenimientos = mantenimientosByAssetCode.get(asset.asset_code) ?? [];
     const latestMaintenance = getLatestMaintenance(assetMantenimientos);
     const healthStatus = getHealthStatus(latestMaintenance?.status);
+    const latestMaintenanceDisplay = getLatestMaintenanceDisplay(latestMaintenance?.status);
     const latestResponses = latestMaintenance
       ? respuestasByMaintenanceId.get(latestMaintenance.id) ?? []
       : [];
@@ -271,6 +334,8 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
       ...asset,
       healthStatus,
       latestMaintenanceStatus: latestMaintenance?.status ?? null,
+      latestMaintenanceDisplayLabel: latestMaintenanceDisplay.label,
+      latestMaintenanceTone: latestMaintenanceDisplay.tone,
       latestMaintenanceExecutedAt: latestMaintenance?.executed_at ?? null,
       latestMaintenanceScheduledDate: latestMaintenance?.scheduled_date ?? null,
       primaryFilterModel,

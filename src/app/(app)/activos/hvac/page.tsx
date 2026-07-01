@@ -13,9 +13,14 @@ import {
 } from 'lucide-react';
 import { getHvacDashboard } from '@/modules/activos/actions/get-hvac-dashboard';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 type HvacDashboardData = Awaited<ReturnType<typeof getHvacDashboard>>;
 type HvacDashboardAsset = HvacDashboardData['assets'][number];
-type DisplayAsset = HvacDashboardAsset;
+type DisplayAsset = HvacDashboardAsset & {
+  isPlaceholder?: boolean;
+};
 
 type CleanroomCard = {
   className: string;
@@ -40,6 +45,7 @@ const MOCK_FALLBACK_ARRAY: DisplayAsset[] = [
     uuid: 'd1c86fd0-7263-46f8-b9f9-5f62c85e10c9',
     asset_code: 'HVAC-01',
     asset_name: 'Air Handling Unit UMA-01',
+    asset_type: 'Sistemas HVAC',
     area: 'hvac',
     site: 'Manufacturing Area',
     brand: 'Carrier',
@@ -51,6 +57,8 @@ const MOCK_FALLBACK_ARRAY: DisplayAsset[] = [
     next_maintenance_date: '2026-07-15',
     healthStatus: 'Healthy',
     latestMaintenanceStatus: 'approved',
+    latestMaintenanceDisplayLabel: 'Last Maintenance: Approved',
+    latestMaintenanceTone: 'green',
     latestMaintenanceExecutedAt: '2026-06-15',
     latestMaintenanceScheduledDate: '2026-07-15',
     primaryFilterModel: 'HEPA H14-F7',
@@ -61,6 +69,7 @@ const MOCK_FALLBACK_ARRAY: DisplayAsset[] = [
     uuid: 'f8d1026a-8998-4dfb-aecb-ac233edf1a63',
     asset_code: 'HVAC-02',
     asset_name: 'Air Handling Unit UMA-02',
+    asset_type: 'Sistemas HVAC',
     area: 'hvac',
     site: 'Cleanroom Storage',
     brand: 'Trane',
@@ -72,6 +81,8 @@ const MOCK_FALLBACK_ARRAY: DisplayAsset[] = [
     next_maintenance_date: '2026-07-10',
     healthStatus: 'Attention',
     latestMaintenanceStatus: 'En revision',
+    latestMaintenanceDisplayLabel: 'En Revisión',
+    latestMaintenanceTone: 'amber',
     latestMaintenanceExecutedAt: '2026-06-10',
     latestMaintenanceScheduledDate: '2026-07-10',
     primaryFilterModel: 'HEPA H14-F9',
@@ -82,6 +93,7 @@ const MOCK_FALLBACK_ARRAY: DisplayAsset[] = [
     uuid: '9c5a4710-8168-4db8-a0bb-a3fd6771ce44',
     asset_code: 'HVAC-03',
     asset_name: 'Extractor e Inyector Ambiental',
+    asset_type: 'Sistemas HVAC',
     area: 'hvac',
     site: 'Technical Roof',
     brand: 'York',
@@ -93,11 +105,157 @@ const MOCK_FALLBACK_ARRAY: DisplayAsset[] = [
     next_maintenance_date: '2026-07-18',
     healthStatus: 'Critical',
     latestMaintenanceStatus: 'critical',
+    latestMaintenanceDisplayLabel: 'critical',
+    latestMaintenanceTone: 'red',
     latestMaintenanceExecutedAt: '2026-06-18',
     latestMaintenanceScheduledDate: '2026-07-18',
     primaryFilterModel: 'Pre-Filtro G4',
     deltaPStatus: 'Critical',
     maintenanceCount: 2,
+  },
+  {
+    uuid: '2b589979-6531-4eb6-8ba3-f705d61a9e41',
+    asset_code: 'HVAC-04',
+    asset_name: 'Unidad Manejadora de Aire UMA-04',
+    asset_type: 'Sistemas HVAC',
+    area: 'hvac',
+    site: 'Sterile Filling',
+    brand: 'Daikin',
+    model: 'HEPA H14-F8',
+    status: 'approved',
+    location_detail: 'Llenado Esteril / Sala A',
+    installation_date: '2026-01-22',
+    last_maintenance_date: '2026-06-20',
+    next_maintenance_date: '2026-07-20',
+    healthStatus: 'Healthy',
+    latestMaintenanceStatus: 'approved',
+    latestMaintenanceDisplayLabel: 'Last Maintenance: Approved',
+    latestMaintenanceTone: 'green',
+    latestMaintenanceExecutedAt: '2026-06-20',
+    latestMaintenanceScheduledDate: '2026-07-20',
+    primaryFilterModel: 'HEPA H14-F8',
+    deltaPStatus: 'Healthy',
+    maintenanceCount: 5,
+  },
+  {
+    uuid: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+    asset_code: 'HVAC-05',
+    asset_name: 'Air Handling Unit Solidos OSD-05',
+    asset_type: 'Sistemas HVAC',
+    area: 'hvac',
+    site: 'OSD Production',
+    brand: 'Lennox',
+    model: 'HEPA H13-F7',
+    status: 'approved',
+    location_detail: 'Produccion Solidos / Granulacion',
+    installation_date: '2026-02-04',
+    last_maintenance_date: '2026-06-12',
+    next_maintenance_date: '2026-07-12',
+    healthStatus: 'Healthy',
+    latestMaintenanceStatus: 'approved',
+    latestMaintenanceDisplayLabel: 'Last Maintenance: Approved',
+    latestMaintenanceTone: 'green',
+    latestMaintenanceExecutedAt: '2026-06-12',
+    latestMaintenanceScheduledDate: '2026-07-12',
+    primaryFilterModel: 'HEPA H13-F7',
+    deltaPStatus: 'Healthy',
+    maintenanceCount: 4,
+  },
+  {
+    uuid: '7a0a3fa0-09fa-4f9f-9da3-f1b0b3a71891',
+    asset_code: 'HVAC-06',
+    asset_name: 'Sistema de Extraccion Cabina Pesaje',
+    asset_type: 'Sistemas HVAC',
+    area: 'hvac',
+    site: 'Dispensing',
+    brand: 'Camfil',
+    model: 'Bag Filter F9',
+    status: 'En revision',
+    location_detail: 'Pesaje Materia Prima / Cabina 2',
+    installation_date: '2026-02-18',
+    last_maintenance_date: '2026-06-16',
+    next_maintenance_date: '2026-07-16',
+    healthStatus: 'Attention',
+    latestMaintenanceStatus: 'En revision',
+    latestMaintenanceDisplayLabel: 'En Revisión',
+    latestMaintenanceTone: 'amber',
+    latestMaintenanceExecutedAt: '2026-06-16',
+    latestMaintenanceScheduledDate: '2026-07-16',
+    primaryFilterModel: 'Bag Filter F9',
+    deltaPStatus: 'Attention',
+    maintenanceCount: 3,
+  },
+  {
+    uuid: '0f3d2e69-2fd2-4db2-bc8f-3a9f2602c101',
+    asset_code: 'HVAC-07',
+    asset_name: 'Chilled Water Air Handler CHW-07',
+    asset_type: 'Sistemas HVAC',
+    area: 'hvac',
+    site: 'Utilities',
+    brand: 'Johnson Controls',
+    model: 'Coil Guard MERV 13',
+    status: 'approved',
+    location_detail: 'Cuarto de Utilidades / Chiller Loop',
+    installation_date: '2026-03-01',
+    last_maintenance_date: '2026-06-22',
+    next_maintenance_date: '2026-07-22',
+    healthStatus: 'Healthy',
+    latestMaintenanceStatus: 'approved',
+    latestMaintenanceDisplayLabel: 'Last Maintenance: Approved',
+    latestMaintenanceTone: 'green',
+    latestMaintenanceExecutedAt: '2026-06-22',
+    latestMaintenanceScheduledDate: '2026-07-22',
+    primaryFilterModel: 'Coil Guard MERV 13',
+    deltaPStatus: 'Healthy',
+    maintenanceCount: 4,
+  },
+  {
+    uuid: '51b9e34b-9317-4322-a3f1-c91525d6b1a4',
+    asset_code: 'HVAC-08',
+    asset_name: 'Pressure Cascade Control Unit PCC-08',
+    asset_type: 'Sistemas HVAC',
+    area: 'hvac',
+    site: 'Clean Corridor',
+    brand: 'Siemens',
+    model: 'DP Sensor Array',
+    status: 'critical',
+    location_detail: 'Corredor Clase B / Cascada Presion',
+    installation_date: '2026-03-11',
+    last_maintenance_date: '2026-06-19',
+    next_maintenance_date: '2026-07-19',
+    healthStatus: 'Critical',
+    latestMaintenanceStatus: 'critical',
+    latestMaintenanceDisplayLabel: 'critical',
+    latestMaintenanceTone: 'red',
+    latestMaintenanceExecutedAt: '2026-06-19',
+    latestMaintenanceScheduledDate: '2026-07-19',
+    primaryFilterModel: 'DP Sensor Array',
+    deltaPStatus: 'Critical',
+    maintenanceCount: 2,
+  },
+  {
+    uuid: '8b6d49d7-96d2-4e0e-9698-69cc2a7f0615',
+    asset_code: 'HVAC-09',
+    asset_name: 'Return Air Filtration Module RAF-09',
+    asset_type: 'Sistemas HVAC',
+    area: 'hvac',
+    site: 'Packaging',
+    brand: 'AAF Flanders',
+    model: 'HEPA H14 Return',
+    status: 'approved',
+    location_detail: 'Empaque Secundario / Retorno Aire',
+    installation_date: '2026-03-20',
+    last_maintenance_date: '2026-06-24',
+    next_maintenance_date: '2026-07-24',
+    healthStatus: 'Healthy',
+    latestMaintenanceStatus: 'approved',
+    latestMaintenanceDisplayLabel: 'Last Maintenance: Approved',
+    latestMaintenanceTone: 'green',
+    latestMaintenanceExecutedAt: '2026-06-24',
+    latestMaintenanceScheduledDate: '2026-07-24',
+    primaryFilterModel: 'HEPA H14 Return',
+    deltaPStatus: 'Healthy',
+    maintenanceCount: 4,
   },
 ];
 
@@ -181,6 +339,13 @@ const deltaPClasses: Record<HealthStatus, string> = {
   Critical: 'text-rose-700',
 };
 
+const maintenanceToneClasses: Record<DisplayAsset['latestMaintenanceTone'], string> = {
+  green: 'text-emerald-700',
+  amber: 'text-amber-700',
+  red: 'text-rose-700',
+  slate: 'text-slate-600',
+};
+
 const gaugeRadius = 48;
 const gaugeCircumference = 2 * Math.PI * gaugeRadius;
 
@@ -241,15 +406,11 @@ function formatDate(value: string | null | undefined) {
 }
 
 function formatLocation({
-  area,
   location_detail,
-  site,
 }: {
-  area: string | null;
   location_detail: string | null;
-  site: string | null;
 }) {
-  return [location_detail, area, site].filter(Boolean).join(' / ') || 'Sin ubicacion registrada';
+  return location_detail || 'Sin ubicacion registrada';
 }
 
 function getOperationalStatusBadge(status: string | null) {
@@ -289,6 +450,22 @@ function getDeltaPLabel(status: HealthStatus) {
   }
 
   return 'Critical';
+}
+
+function getMaintenanceStatusIcon(tone: DisplayAsset['latestMaintenanceTone']) {
+  if (tone === 'green') {
+    return '●';
+  }
+
+  if (tone === 'amber') {
+    return '▲';
+  }
+
+  if (tone === 'red') {
+    return '●';
+  }
+
+  return '○';
 }
 
 function getDisplayCounters(displayAssets: DisplayAsset[]) {
@@ -334,9 +511,8 @@ export default async function HvacFleetDashboardPage() {
         activosRaw: dashboardData.assets,
       }
     : null;
-  const displayAssets =
-    data?.activosRaw && data.activosRaw.length > 0 ? data.activosRaw : MOCK_FALLBACK_ARRAY;
-  const isUsingFallbackData = !data?.activosRaw || data.activosRaw.length === 0;
+  const realAssets: DisplayAsset[] = data?.activosRaw || [];
+  const displayAssets = realAssets;
   const counters = getDisplayCounters(displayAssets);
   const healthScore = counters.total > 0 ? (counters.healthy / counters.total) * 100 : 0;
   const normalizedHealthScore = Math.min(Math.max(healthScore, 0), 100);
@@ -481,11 +657,10 @@ export default async function HvacFleetDashboardPage() {
           </article>
         </section>
 
-        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {isUsingFallbackData ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 md:col-span-2 xl:col-span-3">
-              ⚠️ Servidor utilizando datos de respaldo. Verifica las políticas RLS o conexión de
-              Supabase.
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full">
+          {displayAssets.length === 0 ? (
+            <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 md:col-span-3">
+              No hay activos HVAC registrados en la base de datos.
             </div>
           ) : null}
 
@@ -522,23 +697,20 @@ export default async function HvacFleetDashboardPage() {
                   />
                   <EquipmentMetaRow
                     icon={<CalendarDays aria-hidden="true" size={14} />}
-                    label="Last Calibration / Due Date"
-                    value={
-                      <span>
-                        {formatDate(asset.installation_date)}
-                        <span className="px-1.5 text-slate-300">/</span>
-                        {formatDate(asset.next_maintenance_date)}
-                      </span>
-                    }
+                    label="Next Maintenance"
+                    value={formatDate(asset.next_maintenance_date)}
                   />
                   <EquipmentMetaRow
                     icon={<Wrench aria-hidden="true" size={14} />}
-                    label="Last Maintenance / Next Maintenance"
+                    label="Last Maintenance"
                     value={
-                      <span>
-                        {formatDate(asset.latestMaintenanceExecutedAt ?? asset.last_maintenance_date)}
-                        <span className="px-1.5 text-slate-300">/</span>
-                        {formatDate(asset.latestMaintenanceScheduledDate ?? asset.next_maintenance_date)}
+                      <span
+                        className={`inline-flex items-center gap-1.5 font-black ${maintenanceToneClasses[asset.latestMaintenanceTone]}`}
+                      >
+                        <span aria-hidden="true">
+                          {getMaintenanceStatusIcon(asset.latestMaintenanceTone)}
+                        </span>
+                        {asset.latestMaintenanceDisplayLabel}
                       </span>
                     }
                   />
@@ -571,6 +743,33 @@ export default async function HvacFleetDashboardPage() {
               </article>
             );
           })}
+
+          <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-4 md:col-span-3">
+            <button
+              className="min-h-8 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
+              type="button"
+            >
+              Anterior
+            </button>
+            <button
+              className="min-h-8 rounded-md border border-slate-900 bg-slate-900 px-3 text-xs font-black text-white"
+              type="button"
+            >
+              1
+            </button>
+            <button
+              className="min-h-8 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+              type="button"
+            >
+              2
+            </button>
+            <button
+              className="min-h-8 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+              type="button"
+            >
+              Siguiente
+            </button>
+          </div>
         </section>
       </div>
     </main>
