@@ -2,8 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { X } from 'lucide-react';
 import {
   signMaintenanceRecordAction,
+  type MaintenanceSigningAction,
   type MaintenanceSigningRole,
 } from '@/modules/mantenimiento/actions';
 
@@ -25,6 +27,8 @@ type SignatureReviewCardProps = {
   signingRole: MaintenanceSigningRole;
   status: MaintenanceStatus;
 };
+
+type SignatureIntent = MaintenanceSigningAction | null;
 
 function formatDateTimeUtc(value: string | null | undefined) {
   if (!value) {
@@ -59,25 +63,59 @@ export function SignatureReviewCard({
   status,
 }: SignatureReviewCardProps) {
   const router = useRouter();
+  const [signatureIntent, setSignatureIntent] = useState<SignatureIntent>(null);
   const [comments, setComments] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const activeStep = isActiveStep(status, signingRole);
+  const isModalOpen = signatureIntent !== null;
+  const canSubmit = comments.trim().length >= 10 && !isPending;
+  const reviewLabel = signingRole === 'supervisor' ? 'Supervisor' : 'Calidad';
 
-  function submitAction(action: 'approve' | 'reject') {
-    if (action === 'reject' && !comments.trim()) {
-      setErrorMessage('El rechazo requiere comentarios obligatorios.');
+  function openSignatureModal(action: MaintenanceSigningAction) {
+    setSignatureIntent(action);
+    setComments('');
+    setErrorMessage(null);
+  }
+
+  function closeSignatureModal() {
+    if (isPending) {
+      return;
+    }
+
+    setSignatureIntent(null);
+    setComments('');
+    setErrorMessage(null);
+  }
+
+  function submitAction() {
+    if (!signatureIntent) {
+      return;
+    }
+
+    const validationComments = comments.trim();
+
+    if (validationComments.length < 10) {
+      setErrorMessage('Los comentarios de validacion GxP requieren al menos 10 caracteres.');
       return;
     }
 
     setErrorMessage(null);
 
     startTransition(async () => {
+      const clientMetadata = {
+        deviceTimestamp: new Date().toISOString(),
+        clientIp: 'client-ip-pending-server-capture',
+        userAgent: navigator.userAgent,
+      };
+
       const result = await signMaintenanceRecordAction({
         recordUuid,
         signingRole,
-        action,
-        rejectionComments: action === 'reject' ? comments : undefined,
+        action: signatureIntent,
+        validationComments,
+        rejectionComments: signatureIntent === 'reject' ? validationComments : undefined,
+        clientMetadata,
       });
 
       if (!result.ok) {
@@ -85,6 +123,8 @@ export function SignatureReviewCard({
         return;
       }
 
+      setSignatureIntent(null);
+      setComments('');
       router.refresh();
     });
   }
@@ -118,28 +158,22 @@ export function SignatureReviewCard({
           <p className="text-sm text-slate-600">
             Usuario en sesion: <span className="font-semibold">{currentUserRole}</span>
           </p>
-          <textarea
-            className="min-h-28 rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-950 outline-none transition focus:border-sky-600 focus:ring-2 focus:ring-sky-100"
-            onChange={(event) => setComments(event.target.value)}
-            placeholder="Comentarios de revision o motivo de rechazo."
-            value={comments}
-          />
           <div className="grid gap-3 sm:grid-cols-2">
             <button
               className="h-11 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:bg-slate-300"
               disabled={isPending}
-              onClick={() => submitAction('approve')}
+              onClick={() => openSignatureModal('approve')}
               type="button"
             >
-              {isPending ? 'Procesando...' : 'Aprobar Revision'}
+              Aprobar Inspección
             </button>
             <button
-              className="h-11 rounded-md bg-red-700 px-4 text-sm font-semibold text-white transition hover:bg-red-800 disabled:bg-slate-300"
+              className="h-11 rounded-md border border-red-300 bg-white px-4 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:border-slate-200 disabled:text-slate-300"
               disabled={isPending}
-              onClick={() => submitAction('reject')}
+              onClick={() => openSignatureModal('reject')}
               type="button"
             >
-              {isPending ? 'Procesando...' : 'Rechazar'}
+              Rechazar con Desvío
             </button>
           </div>
           {errorMessage ? (
@@ -147,6 +181,97 @@ export function SignatureReviewCard({
               {errorMessage}
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {isModalOpen ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 print:hidden"
+          role="dialog"
+        >
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                  Firma Electronica Regulada
+                </p>
+                <h2 className="mt-1 text-lg font-black text-slate-950">
+                  {signatureIntent === 'approve'
+                    ? `Aprobar inspeccion - ${reviewLabel}`
+                    : `Rechazar con desvio - ${reviewLabel}`}
+                </h2>
+              </div>
+              <button
+                aria-label="Cerrar modal de firma"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+                onClick={closeSignatureModal}
+                type="button"
+              >
+                <X aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label
+              className="mt-5 block text-sm font-bold text-slate-900"
+              htmlFor={`${signingRole}-validation-comments`}
+            >
+              Comentarios de Validación GxP
+            </label>
+            <textarea
+              className="mt-2 min-h-32 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-950 outline-none transition focus:border-slate-700 focus:ring-2 focus:ring-slate-100"
+              id={`${signingRole}-validation-comments`}
+              onChange={(event) => {
+                setComments(event.target.value);
+                setErrorMessage(null);
+              }}
+              placeholder="Documente la base tecnica y regulatoria de esta decision."
+              value={comments}
+            />
+            <div className="mt-2 flex items-center justify-between gap-3 text-xs font-semibold text-slate-500">
+              <span>Minimo requerido: 10 caracteres</span>
+              <span>{comments.trim().length}/10</span>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">
+              <p>Device timestamp: se capturara al confirmar.</p>
+              <p>Client IP: client-ip-pending-server-capture</p>
+              <p className="truncate">User-agent: navegador del operador en sesion.</p>
+            </div>
+
+            {errorMessage ? (
+              <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-800">
+                {errorMessage}
+              </div>
+            ) : null}
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                className="h-11 rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:text-slate-300"
+                disabled={isPending}
+                onClick={closeSignatureModal}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button
+                className={
+                  signatureIntent === 'approve'
+                    ? 'h-11 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:bg-slate-300'
+                    : 'h-11 rounded-md bg-red-700 px-4 text-sm font-semibold text-white transition hover:bg-red-800 disabled:bg-slate-300'
+                }
+                disabled={!canSubmit}
+                onClick={submitAction}
+                type="button"
+              >
+                {isPending
+                  ? 'Procesando...'
+                  : signatureIntent === 'approve'
+                    ? 'Confirmar aprobación'
+                    : 'Confirmar rechazo'}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </article>

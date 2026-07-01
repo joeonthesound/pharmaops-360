@@ -4,6 +4,7 @@ import type { Activo } from '@/modules/activos/activos.interface';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { ChecklistForm } from './checklist-form';
 import { CopyRuiButton } from './copy-rui-button';
+import { EvidencePhotoGallery } from './evidence-photo-gallery';
 import { PrintReportButton } from './print-report-button';
 import { SignatureReviewCard } from './signature-review-card';
 
@@ -124,6 +125,7 @@ type RecordNotes = {
 
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EVIDENCE_BUCKET = 'evidencias-mantenimiento';
 const VIRTUAL_EVIDENCE_FIELD_KEY = 'evidencias_hvac';
 
 function groupBySection(campos: FormularioCampo[]) {
@@ -228,6 +230,22 @@ function isMaintenanceStatus(status: string | null | undefined): status is Maint
     status === 'pending_quality' ||
     status === 'approved' ||
     status === 'rejected'
+  );
+}
+
+function canRenderSupervisorSignature(usuario: UsuarioPermisos | null) {
+  const normalizedRole = String(usuario?.role ?? '').trim().toLowerCase();
+
+  return (
+    usuario?.can_review === true ||
+    [
+      'supervisor',
+      'calidad',
+      'administrador',
+      'superadmin',
+      'propietario / gerencia',
+      'gerente general',
+    ].includes(normalizedRole)
   );
 }
 
@@ -359,6 +377,100 @@ function getEvidenceLabel(value: string) {
   const parts = normalized.split('/').filter(Boolean);
 
   return parts.at(-1) ?? value;
+}
+
+function parseEvidenceJson(value: string) {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function extractEvidenceValues(rawValue: string | null) {
+  if (!rawValue) {
+    return [];
+  }
+
+  const trimmedValue = rawValue.trim();
+  const parsedValue = parseEvidenceJson(trimmedValue);
+
+  if (Array.isArray(parsedValue)) {
+    return parsedValue.flatMap((item) => {
+      if (typeof item === 'string') {
+        return [item];
+      }
+
+      if (item && typeof item === 'object') {
+        const candidate = item as Record<string, unknown>;
+        const value =
+          candidate.publicUrl ??
+          candidate.public_url ??
+          candidate.url ??
+          candidate.path ??
+          candidate.storagePath ??
+          candidate.storage_path;
+
+        return typeof value === 'string' ? [value] : [];
+      }
+
+      return [];
+    });
+  }
+
+  if (parsedValue && typeof parsedValue === 'object') {
+    const candidate = parsedValue as Record<string, unknown>;
+    const value =
+      candidate.publicUrl ??
+      candidate.public_url ??
+      candidate.url ??
+      candidate.path ??
+      candidate.storagePath ??
+      candidate.storage_path;
+
+    return typeof value === 'string' ? [value] : [];
+  }
+
+  return [trimmedValue];
+}
+
+function normalizeEvidenceUrl(value: string, getPublicUrl: (path: string) => string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(trimmedValue)) {
+    return trimmedValue;
+  }
+
+  const normalizedPath = trimmedValue.replace(new RegExp(`^${EVIDENCE_BUCKET}/`), '');
+
+  return getPublicUrl(normalizedPath);
+}
+
+function extractEvidenceImageUrls(
+  respuestas: RespuestaAuditada[],
+  getPublicUrl: (path: string) => string,
+) {
+  const imageUrls = respuestas.flatMap((respuesta) => {
+    const fieldType = String(respuesta.field_type ?? '').toLowerCase();
+    const isEvidenceField =
+      respuesta.field_key === VIRTUAL_EVIDENCE_FIELD_KEY ||
+      ['evidence', 'file', 'image', 'attachment'].includes(fieldType) ||
+      Boolean(respuesta.valor_texto?.includes(EVIDENCE_BUCKET));
+
+    if (!isEvidenceField) {
+      return [];
+    }
+
+    return extractEvidenceValues(respuesta.valor_texto)
+      .map((value) => normalizeEvidenceUrl(value, getPublicUrl))
+      .filter((value): value is string => Boolean(value));
+  });
+
+  return Array.from(new Set(imageUrls));
 }
 
 async function insertChecklistAuditEvent({
@@ -973,6 +1085,9 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   const isEditableDocument = normalizedStatus === 'draft' || normalizedStatus === 'rejected';
   const isReadOnlyDocument = !isEditableDocument;
   const editableInitialResponses = buildEditableFieldResponses(orderedResponses);
+  const evidenceImageUrls = extractEvidenceImageUrls(orderedResponses, (path) => {
+    return supabase.storage.from(EVIDENCE_BUCKET).getPublicUrl(path).data.publicUrl;
+  });
   const printMetadata = [
     ['Tipo de mantenimiento', 'Preventivo / Correctivo HVAC'],
     ['Fecha', formatDateTimeUtc(maintenanceRecord?.executed_at ?? notes.captured_at)],
@@ -1109,6 +1224,13 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
 
           <section className="mt-3">
             <h2 className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-black">
+              Evidencias fotograficas
+            </h2>
+            <EvidencePhotoGallery imageUrls={evidenceImageUrls} />
+          </section>
+
+          <section className="mt-3">
+            <h2 className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-black">
               Datos completos del checklist
             </h2>
             <table className="table-auto w-full border-collapse text-left text-[9px] leading-tight">
@@ -1238,6 +1360,23 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                   {formatDateTimeUtc(maintenanceRecord?.executed_at ?? notes.captured_at)}
                 </p>
               </div>
+            </section>
+
+            <section className="shrink-0 rounded border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">
+                    Evidencias fotograficas
+                  </h2>
+                  <p className="text-xs font-semibold text-slate-500">
+                    Adjuntos capturados durante la inspeccion RUI.
+                  </p>
+                </div>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">
+                  {evidenceImageUrls.length} archivo(s)
+                </span>
+              </div>
+              <EvidencePhotoGallery imageUrls={evidenceImageUrls} />
             </section>
 
             <section className="min-h-0 flex-1 overflow-y-auto max-h-full bg-white rounded border border-slate-200">
@@ -1622,7 +1761,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                 </article>
 
                 <SignatureReviewCard
-                  canSign={usuario?.can_review === true}
+                  canSign={canRenderSupervisorSignature(usuario)}
                   currentUserRole={usuario?.role ?? 'Sin rol activo'}
                   rejectionComments={maintenanceRecord?.rejection_comments ?? null}
                   recordUuid={maintenanceRecord?.uuid ?? ''}

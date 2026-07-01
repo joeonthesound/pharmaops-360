@@ -11,7 +11,13 @@ export type SignMaintenanceRecordInput = {
   recordUuid: string;
   signingRole: MaintenanceSigningRole;
   action: MaintenanceSigningAction;
+  validationComments?: string;
   rejectionComments?: string;
+  clientMetadata?: {
+    deviceTimestamp: string;
+    clientIp: string;
+    userAgent: string;
+  };
 };
 
 export type SignMaintenanceRecordResult = {
@@ -41,6 +47,12 @@ type UsuarioRolPermisos = {
   can_approve: boolean | null;
 };
 
+type ClientSignatureMetadata = {
+  deviceTimestamp: string;
+  clientIp: string;
+  userAgent: string;
+};
+
 type MantenimientoRegistroFirma = {
   uuid: string;
   status: MaintenanceRecordStatus | string | null;
@@ -60,7 +72,13 @@ function sanitizeInput(input: SignMaintenanceRecordInput) {
     recordUuid: String(input.recordUuid ?? '').trim(),
     signingRole: input.signingRole,
     action: input.action,
+    validationComments: String(input.validationComments ?? '').trim(),
     rejectionComments: String(input.rejectionComments ?? '').trim(),
+    clientMetadata: {
+      deviceTimestamp: String(input.clientMetadata?.deviceTimestamp ?? '').trim(),
+      clientIp: String(input.clientMetadata?.clientIp ?? 'client-ip-pending-server-capture').trim(),
+      userAgent: String(input.clientMetadata?.userAgent ?? '').trim(),
+    },
   };
 }
 
@@ -89,6 +107,22 @@ function canSignCurrentStep(
 
 function resolveApprovedStatus(signingRole: MaintenanceSigningRole): MaintenanceRecordStatus {
   return signingRole === 'supervisor' ? 'pending_quality' : 'approved';
+}
+
+function canReviewAsSupervisorOrHigher(permisos: UsuarioRolPermisos) {
+  const normalizedRole = String(permisos.role ?? '').trim().toLowerCase();
+
+  return (
+    permisos.can_review === true ||
+    [
+      'supervisor',
+      'calidad',
+      'administrador',
+      'superadmin',
+      'propietario / gerencia',
+      'gerente general',
+    ].includes(normalizedRole)
+  );
 }
 
 function buildSignaturePatch(
@@ -125,17 +159,25 @@ async function insertSignatureAuditEvent({
   action,
   signerEmail,
   signedAtUtc,
+  validationComments,
   rejectionComments,
+  clientMetadata,
 }: {
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
   recordUuid: string;
   action: MaintenanceSigningAction;
   signerEmail: string;
   signedAtUtc: string;
+  validationComments: string;
   rejectionComments: string;
+  clientMetadata: ClientSignatureMetadata;
 }): Promise<AuditInsertResult> {
   const accion = action.toUpperCase();
-  const comentarios = rejectionComments || null;
+  const comentarios = JSON.stringify({
+    validation_comments: validationComments,
+    rejection_comments: action === 'reject' ? rejectionComments : null,
+    environment_metadata: clientMetadata,
+  });
 
   const { error: firmasError } = await supabase.from('mantenimiento_firmas').insert({
     mantenimiento_uuid: recordUuid,
@@ -182,7 +224,8 @@ export async function signMaintenanceRecordAction(
 ): Promise<SignMaintenanceRecordResult> {
   await cookies();
 
-  const { recordUuid, signingRole, action, rejectionComments } = sanitizeInput(input);
+  const { recordUuid, signingRole, action, validationComments, rejectionComments, clientMetadata } =
+    sanitizeInput(input);
 
   if (!UUID_PATTERN.test(recordUuid)) {
     return {
@@ -213,6 +256,17 @@ export async function signMaintenanceRecordAction(
       debug: {
         stage: 'input_validation',
         code: 'invalid_action',
+      },
+    };
+  }
+
+  if (validationComments.length < 10) {
+    return {
+      ok: false,
+      message: 'Los comentarios de validacion GxP requieren al menos 10 caracteres.',
+      debug: {
+        stage: 'input_validation',
+        code: 'missing_validation_comments',
       },
     };
   }
@@ -283,13 +337,13 @@ export async function signMaintenanceRecordAction(
 
   const permisos = usuario as UsuarioRolPermisos;
 
-  if (signingRole === 'supervisor' && permisos.can_review !== true) {
+  if (signingRole === 'supervisor' && !canReviewAsSupervisorOrHigher(permisos)) {
     return {
       ok: false,
-      message: 'Usuario sin permiso can_review para firma de Supervisor.',
+      message: 'Usuario sin perfil Supervisor o superior para firma electronica.',
       debug: {
         stage: 'rbac_validation',
-        code: 'missing_can_review',
+        code: 'missing_supervisor_or_higher_profile',
         details: { signerEmail, role: permisos.role },
       },
     };
@@ -374,35 +428,35 @@ export async function signMaintenanceRecordAction(
     rejectionComments,
   );
 
-  if (action === 'reject') {
-    const auditResult = await insertSignatureAuditEvent({
-      supabase,
+  const auditResult = await insertSignatureAuditEvent({
+    supabase,
+    recordUuid,
+    action,
+    signerEmail,
+    signedAtUtc,
+    validationComments,
+    rejectionComments,
+    clientMetadata,
+  });
+
+  if (!auditResult.ok) {
+    console.error('[ALERTA AUDITORIA GxP] Firma bloqueada por fallo de audit trail', {
       recordUuid,
-      action,
       signerEmail,
-      signedAtUtc,
-      rejectionComments,
+      signingRole,
+      action,
+      auditError: auditResult.error,
     });
 
-    if (!auditResult.ok) {
-      console.error('[ALERTA AUDITORIA GxP] Rechazo bloqueado por fallo de audit trail', {
-        recordUuid,
-        signerEmail,
-        signingRole,
-        action,
-        auditError: auditResult.error,
-      });
-
-      return {
-        ok: false,
-        message: 'No fue posible registrar el evento de rechazo en la pista de auditoria.',
-        debug: {
-          stage: 'audit_trail_insert',
-          code: 'audit_insert_failed',
-          details: auditResult.error,
-        },
-      };
-    }
+    return {
+      ok: false,
+      message: 'No fue posible registrar el evento de firma en la pista de auditoria.',
+      debug: {
+        stage: 'audit_trail_insert',
+        code: 'audit_insert_failed',
+        details: auditResult.error,
+      },
+    };
   }
 
   const { data: updatedRecord, error: updateError } = await supabase
