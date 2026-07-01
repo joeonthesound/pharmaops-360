@@ -1,11 +1,19 @@
 import Link from 'next/link';
 import { FlaskConical, ShieldAlert } from 'lucide-react';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
+import { OrderCreationForm, type AssetOption } from './order-creation-form';
 
 type UsuarioRolRow = {
   can_approve: boolean | null;
   can_create_assets: boolean | null;
   role: string | null;
+};
+
+type AssetRow = {
+  uuid: string | null;
+  asset_code: string | null;
+  asset_name: string | null;
+  asset_type: string | null;
 };
 
 const TARGET_URL = '/mantenimiento/crear-ordenes';
@@ -82,6 +90,32 @@ async function registerDeniedAccess({
   return count ?? (insertError ? 0 : 1);
 }
 
+async function getAvailableAssets(): Promise<AssetOption[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('activos')
+    .select('uuid, asset_code, asset_name, asset_type')
+    .order('asset_code', { ascending: true });
+
+  if (error) {
+    console.error('[CREAR ORDENES] Error cargando activos', {
+      code: error.code,
+      message: error.message,
+    });
+
+    return [];
+  }
+
+  return ((data ?? []) as AssetRow[])
+    .filter((asset) => asset.uuid && asset.asset_code && asset.asset_name && asset.asset_type)
+    .map((asset) => ({
+      uuid: String(asset.uuid),
+      asset_code: String(asset.asset_code),
+      asset_name: String(asset.asset_name),
+      asset_type: String(asset.asset_type),
+    }));
+}
+
 function AccessDeniedScreen({ counterValue }: { counterValue: number }) {
   return (
     <main className="min-h-[calc(100vh-4.5rem)] bg-slate-50 px-4 py-8 text-slate-950">
@@ -125,6 +159,8 @@ export default async function CrearOrdenesPage() {
     return <AccessDeniedScreen counterValue={counterValue} />;
   }
 
+  const assets = await getAvailableAssets();
+
   return (
     <main className="min-h-[calc(100vh-4.5rem)] bg-slate-50 px-4 py-8 text-slate-950">
       <section className="mx-auto max-w-5xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -144,6 +180,9 @@ export default async function CrearOrdenesPage() {
           </div>
         </div>
       </section>
+      <div className="mx-auto max-w-5xl">
+        <OrderCreationForm assets={assets} />
+      </div>
     </main>
   );
 }
