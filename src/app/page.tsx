@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { LoginForm } from './login-form';
 
+export const dynamic = 'force-dynamic';
+
 const ENABLE_INFRA_CHECKLIST = false;
 
 type LoginState = {

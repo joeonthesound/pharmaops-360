@@ -1,11 +1,14 @@
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
-  CheckCircle2,
+  CalendarDays,
   Gauge,
+  MapPin,
   ShieldCheck,
+  Wrench,
   Wind,
 } from 'lucide-react';
 import { getHvacDashboard } from '@/modules/activos/actions/get-hvac-dashboard';
@@ -102,6 +105,12 @@ const healthStatusClasses: Record<HealthStatus, string> = {
   Critical: 'bg-rose-50 text-rose-700 border-rose-200',
 };
 
+const deltaPClasses: Record<HealthStatus, string> = {
+  Healthy: 'text-emerald-700',
+  Attention: 'text-amber-700',
+  Critical: 'text-rose-700',
+};
+
 const gaugeRadius = 48;
 const gaugeCircumference = 2 * Math.PI * gaugeRadius;
 
@@ -119,13 +128,93 @@ function MetricRow({ label, value, limit }: { label: string; value: string; limi
   );
 }
 
-function EquipmentMetaRow({ label, value }: { label: string; value: string }) {
+function EquipmentMetaRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+}) {
   return (
-    <div className="grid gap-1 border-b border-slate-100 py-2 last:border-b-0">
-      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="text-sm font-semibold leading-5 text-slate-900">{value}</p>
+    <div className="grid grid-cols-[18px_1fr] gap-2 border-b border-slate-100 py-2.5 last:border-b-0">
+      <span className="mt-0.5 text-slate-400">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+          {label}
+        </p>
+        <div className="mt-0.5 text-[13px] font-semibold leading-5 text-slate-900">
+          {value}
+        </div>
+      </div>
     </div>
   );
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) {
+    return 'No registrada';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('es-PA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+function formatLocation({
+  area,
+  location_detail,
+  site,
+}: {
+  area: string | null;
+  location_detail: string | null;
+  site: string | null;
+}) {
+  return [location_detail, area, site].filter(Boolean).join(' / ') || 'Sin ubicacion registrada';
+}
+
+function getOperationalStatusBadge(status: string | null) {
+  const normalizedStatus = String(status ?? '').trim().toLowerCase();
+
+  if (normalizedStatus.includes('mantenimiento')) {
+    return {
+      label: 'MANTENIMIENTO',
+      className: 'border-amber-200 bg-amber-50 text-amber-700',
+    };
+  }
+
+  if (normalizedStatus.includes('operativo') || normalizedStatus.includes('active')) {
+    return {
+      label: 'OPERATIVO',
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    };
+  }
+
+  return {
+    label: status?.trim().toUpperCase() || 'SIN ESTADO',
+    className: 'border-slate-200 bg-slate-50 text-slate-600',
+  };
+}
+
+function getDeltaPLabel(status: HealthStatus) {
+  if (status === 'Healthy') {
+    return 'Normal';
+  }
+
+  if (status === 'Attention') {
+    return 'Attention';
+  }
+
+  return 'Critical';
 }
 
 export default async function HvacFleetDashboardPage() {
@@ -272,57 +361,89 @@ export default async function HvacFleetDashboardPage() {
           </article>
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-3">
-          {assets.map((asset) => (
-            <article
-              className="rounded-lg border border-slate-100 bg-white p-5 shadow-sm"
-              key={asset.uuid}
-            >
-              <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                    {asset.asset_code}
-                  </p>
-                  <h2 className="mt-1 text-lg font-black leading-6 text-slate-950">
-                    {asset.asset_name}
-                  </h2>
-                </div>
-                <span
-                  className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${healthStatusClasses[asset.healthStatus]}`}
-                >
-                  {asset.healthStatus}
-                </span>
-              </div>
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {assets.map((asset) => {
+            const operationalStatus = getOperationalStatusBadge(asset.status);
+            const deltaPLabel = getDeltaPLabel(asset.deltaPStatus);
 
-              <div className="py-3">
-                <EquipmentMetaRow
-                  label="Location"
-                  value={asset.location_detail || 'Sin ubicacion registrada'}
-                />
-                <EquipmentMetaRow
-                  label="Operational Asset Status"
-                  value={asset.status || 'Sin estado registrado'}
-                />
-                <EquipmentMetaRow
-                  label="Latest Maintenance Status"
-                  value={asset.latestMaintenanceStatus || 'Sin registros'}
-                />
-                <EquipmentMetaRow
-                  label="Maintenance Records"
-                  value={String(asset.maintenanceCount)}
-                />
-              </div>
-
-              <Link
-                href={`/activos/hvac/ver/${asset.uuid}`}
-                className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-black text-slate-900 transition hover:border-slate-900 hover:bg-slate-900 hover:text-white"
+            return (
+              <article
+                className="flex min-h-full flex-col rounded-lg border border-slate-100 bg-white px-4 py-3.5 shadow-sm"
+                key={asset.uuid}
               >
-                <Activity aria-hidden="true" size={17} />
-                Consultar
-                <ArrowRight aria-hidden="true" size={16} />
-              </Link>
-            </article>
-          ))}
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                      {asset.asset_code}
+                    </p>
+                    <h2 className="mt-1 line-clamp-2 text-[15px] font-black leading-5 text-slate-950">
+                      {asset.asset_name}
+                    </h2>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full border px-2.5 py-1 text-[9px] font-black tracking-wide ${operationalStatus.className}`}
+                  >
+                    {operationalStatus.label}
+                  </span>
+                </div>
+
+                <div className="grid flex-1 py-2">
+                  <EquipmentMetaRow
+                    icon={<MapPin aria-hidden="true" size={14} />}
+                    label="Location"
+                    value={formatLocation(asset)}
+                  />
+                  <EquipmentMetaRow
+                    icon={<CalendarDays aria-hidden="true" size={14} />}
+                    label="Last Calibration / Due Date"
+                    value={
+                      <span>
+                        {formatDate(asset.installation_date)}
+                        <span className="px-1.5 text-slate-300">/</span>
+                        {formatDate(asset.next_maintenance_date)}
+                      </span>
+                    }
+                  />
+                  <EquipmentMetaRow
+                    icon={<Wrench aria-hidden="true" size={14} />}
+                    label="Last Maintenance / Next Maintenance"
+                    value={
+                      <span>
+                        {formatDate(asset.latestMaintenanceExecutedAt ?? asset.last_maintenance_date)}
+                        <span className="px-1.5 text-slate-300">/</span>
+                        {formatDate(asset.latestMaintenanceScheduledDate ?? asset.next_maintenance_date)}
+                      </span>
+                    }
+                  />
+                  <EquipmentMetaRow
+                    icon={<Wind aria-hidden="true" size={14} />}
+                    label="Primary Filter Model & Delta P"
+                    value={
+                      <span>
+                        {asset.primaryFilterModel || 'Filtro primario no registrado'}
+                        <span className="px-1.5 text-slate-300">/</span>
+                        Delta P:{' '}
+                        <span className={`font-black ${deltaPClasses[asset.deltaPStatus]}`}>
+                          {deltaPLabel}
+                        </span>
+                      </span>
+                    }
+                  />
+                </div>
+
+                <div className="mt-1 flex justify-end border-t border-slate-100 pt-3">
+                  <Link
+                    href={`/activos/hvac/ver/${asset.uuid}`}
+                    className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 hover:text-slate-950"
+                  >
+                    <Activity aria-hidden="true" size={15} />
+                    Consultar
+                    <ArrowRight aria-hidden="true" size={14} />
+                  </Link>
+                </div>
+              </article>
+            );
+          })}
         </section>
       </div>
     </main>
