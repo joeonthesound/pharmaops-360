@@ -214,7 +214,7 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
       .select(
         'uuid, asset_code, asset_name, area, site, brand, model, status, location_detail, installation_date, last_maintenance_date, next_maintenance_date',
       )
-      .eq('area', 'hvac')
+      .ilike('area', '%hvac%')
       .order('asset_code', { ascending: true }),
     supabase
       .from('mantenimientos_registros')
@@ -308,6 +308,9 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
   if (process.env.NEXT_PUBLIC_SUPERADMIN_DEBUG === "true") {
     console.log("=== [MONITOREO OPERACIÓN HVAC - OPCIÓN A EN VIVO] ===");
     console.log(`Activos HVAC Mapeados: ${activosData.length}`);
+    if (activosData.length === 0) {
+      console.log("[DATA RECOVERY ALERT]: Query returned 0 assets. Check table strings or missing authenticated SELECT policies.");
+    }
     console.log("=====================================================");
   }
 

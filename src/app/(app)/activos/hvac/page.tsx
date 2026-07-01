@@ -13,6 +13,10 @@ import {
 } from 'lucide-react';
 import { getHvacDashboard } from '@/modules/activos/actions/get-hvac-dashboard';
 
+type HvacDashboardData = Awaited<ReturnType<typeof getHvacDashboard>>;
+type HvacDashboardAsset = HvacDashboardData['assets'][number];
+type DisplayAsset = HvacDashboardAsset;
+
 type CleanroomCard = {
   className: string;
   state: 'Normal' | 'Caution' | 'Alarm';
@@ -30,6 +34,72 @@ type Notification = {
 };
 
 type HealthStatus = 'Healthy' | 'Attention' | 'Critical';
+
+const MOCK_FALLBACK_ARRAY: DisplayAsset[] = [
+  {
+    uuid: 'd1c86fd0-7263-46f8-b9f9-5f62c85e10c9',
+    asset_code: 'HVAC-01',
+    asset_name: 'Air Handling Unit UMA-01',
+    area: 'hvac',
+    site: 'Manufacturing Area',
+    brand: 'Carrier',
+    model: 'HEPA H14-F7',
+    status: 'approved',
+    location_detail: 'Manufacturing Plant 1',
+    installation_date: '2026-01-15',
+    last_maintenance_date: '2026-06-15',
+    next_maintenance_date: '2026-07-15',
+    healthStatus: 'Healthy',
+    latestMaintenanceStatus: 'approved',
+    latestMaintenanceExecutedAt: '2026-06-15',
+    latestMaintenanceScheduledDate: '2026-07-15',
+    primaryFilterModel: 'HEPA H14-F7',
+    deltaPStatus: 'Healthy',
+    maintenanceCount: 4,
+  },
+  {
+    uuid: 'f8d1026a-8998-4dfb-aecb-ac233edf1a63',
+    asset_code: 'HVAC-02',
+    asset_name: 'Air Handling Unit UMA-02',
+    area: 'hvac',
+    site: 'Cleanroom Storage',
+    brand: 'Trane',
+    model: 'HEPA H14-F9',
+    status: 'En revision',
+    location_detail: 'Warehouse Cleanroom',
+    installation_date: '2026-02-10',
+    last_maintenance_date: '2026-06-10',
+    next_maintenance_date: '2026-07-10',
+    healthStatus: 'Attention',
+    latestMaintenanceStatus: 'En revision',
+    latestMaintenanceExecutedAt: '2026-06-10',
+    latestMaintenanceScheduledDate: '2026-07-10',
+    primaryFilterModel: 'HEPA H14-F9',
+    deltaPStatus: 'Attention',
+    maintenanceCount: 3,
+  },
+  {
+    uuid: '9c5a4710-8168-4db8-a0bb-a3fd6771ce44',
+    asset_code: 'HVAC-03',
+    asset_name: 'Extractor e Inyector Ambiental',
+    area: 'hvac',
+    site: 'Technical Roof',
+    brand: 'York',
+    model: 'Pre-Filtro G4',
+    status: 'critical',
+    location_detail: 'Techo Tecnico / Zona C',
+    installation_date: '2026-03-04',
+    last_maintenance_date: '2026-06-18',
+    next_maintenance_date: '2026-07-18',
+    healthStatus: 'Critical',
+    latestMaintenanceStatus: 'critical',
+    latestMaintenanceExecutedAt: '2026-06-18',
+    latestMaintenanceScheduledDate: '2026-07-18',
+    primaryFilterModel: 'Pre-Filtro G4',
+    deltaPStatus: 'Critical',
+    maintenanceCount: 2,
+  },
+];
 
 const cleanroomClasses: CleanroomCard[] = [
   {
@@ -185,14 +255,18 @@ function formatLocation({
 function getOperationalStatusBadge(status: string | null) {
   const normalizedStatus = String(status ?? '').trim().toLowerCase();
 
-  if (normalizedStatus.includes('mantenimiento')) {
+  if (normalizedStatus.includes('mantenimiento') || normalizedStatus.includes('revision')) {
     return {
       label: 'MANTENIMIENTO',
       className: 'border-amber-200 bg-amber-50 text-amber-700',
     };
   }
 
-  if (normalizedStatus.includes('operativo') || normalizedStatus.includes('active')) {
+  if (
+    normalizedStatus.includes('operativo') ||
+    normalizedStatus.includes('active') ||
+    normalizedStatus.includes('approved')
+  ) {
     return {
       label: 'OPERATIVO',
       className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -217,8 +291,54 @@ function getDeltaPLabel(status: HealthStatus) {
   return 'Critical';
 }
 
+function getDisplayCounters(displayAssets: DisplayAsset[]) {
+  return displayAssets.reduce(
+    (acc, asset) => {
+      acc.total += 1;
+
+      if (asset.healthStatus === 'Healthy') {
+        acc.healthy += 1;
+      }
+
+      if (asset.healthStatus === 'Attention') {
+        acc.attention += 1;
+      }
+
+      if (asset.healthStatus === 'Critical') {
+        acc.critical += 1;
+      }
+
+      return acc;
+    },
+    {
+      total: 0,
+      healthy: 0,
+      attention: 0,
+      critical: 0,
+    },
+  );
+}
+
 export default async function HvacFleetDashboardPage() {
-  const { assets, counters, healthScore } = await getHvacDashboard();
+  let dashboardData: HvacDashboardData | null = null;
+
+  try {
+    dashboardData = await getHvacDashboard();
+  } catch (error) {
+    console.error('[HVAC DASHBOARD] Error cargando datos productivos', error);
+  }
+
+  const data = dashboardData
+    ? {
+        ...dashboardData,
+        activosRaw: dashboardData.assets,
+      }
+    : null;
+  const displayAssets =
+    data?.activosRaw && data.activosRaw.length > 0 ? data.activosRaw : MOCK_FALLBACK_ARRAY;
+  const isUsingFallbackData = !data?.activosRaw || data.activosRaw.length === 0;
+  const counters = getDisplayCounters(displayAssets);
+  const healthScore = counters.total > 0 ? (counters.healthy / counters.total) * 100 : 0;
   const normalizedHealthScore = Math.min(Math.max(healthScore, 0), 100);
   const gaugeDashOffset =
     gaugeCircumference * (1 - normalizedHealthScore / 100);
@@ -362,7 +482,14 @@ export default async function HvacFleetDashboardPage() {
         </section>
 
         <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {assets.map((asset) => {
+          {isUsingFallbackData ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 md:col-span-2 xl:col-span-3">
+              ⚠️ Servidor utilizando datos de respaldo. Verifica las políticas RLS o conexión de
+              Supabase.
+            </div>
+          ) : null}
+
+          {displayAssets.map((asset) => {
             const operationalStatus = getOperationalStatusBadge(asset.status);
             const deltaPLabel = getDeltaPLabel(asset.deltaPStatus);
 
