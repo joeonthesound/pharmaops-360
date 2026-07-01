@@ -51,7 +51,13 @@ type MaintenanceRecordStatus =
   | 'pending_quality'
   | 'pending_management'
   | 'approved'
-  | 'rejected';
+  | 'rejected'
+  | 'DRAFT'
+  | 'PENDING_SUPERVISOR'
+  | 'PENDING_QUALITY'
+  | 'PENDING_MANAGEMENT'
+  | 'APPROVED'
+  | 'REJECTED';
 
 type UsuarioRolPermisos = {
   user_email: string | null;
@@ -236,7 +242,7 @@ function canSignCurrentStep(
 }
 
 function resolveApprovedStatus(signingRole: MaintenanceSigningRole): MaintenanceRecordStatus {
-  return signingRole === 'supervisor' ? 'pending_quality' : 'approved';
+  return signingRole === 'supervisor' ? 'PENDING_QUALITY' : 'APPROVED';
 }
 
 function canReviewAsSupervisorOrHigher(permisos: UsuarioRolPermisos) {
@@ -263,7 +269,7 @@ function buildSignaturePatch(
   rejectionComments: string,
 ) {
   const nextStatus =
-    action === 'reject' ? 'rejected' : resolveApprovedStatus(signingRole);
+    action === 'reject' ? 'REJECTED' : resolveApprovedStatus(signingRole);
 
   const signaturePatch =
     signingRole === 'supervisor'

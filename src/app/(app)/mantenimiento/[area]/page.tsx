@@ -1115,7 +1115,7 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
     const { error: statusUpdateError } = await supabase
       .from('mantenimientos_registros')
       .update({
-        status: 'pending_supervisor',
+        status: 'PENDING_SUPERVISOR',
         rejection_comments: shouldClearRejectedState ? null : undefined,
         supervisor_signed_by: shouldClearRejectedState ? null : undefined,
         supervisor_signed_at: shouldClearRejectedState ? null : undefined,

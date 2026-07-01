@@ -20,6 +20,7 @@ type MaintenanceRecordImageDebug = {
 type FormResponseImageDebug = {
   campo_id: number | null;
   valor_texto: string | null;
+  valor_seleccion: string | null;
 };
 
 type FormFieldImageDebug = {
@@ -159,7 +160,7 @@ async function debugReportImages(reportUuid: string) {
   ] = await Promise.all([
     supabase
       .from('formularios_respuestas')
-      .select('campo_id, valor_texto')
+      .select('campo_id, valor_texto, valor_seleccion')
       .eq('mantenimiento_id', record.id),
     supabase
       .from('formularios_campos')
@@ -198,7 +199,10 @@ async function debugReportImages(reportUuid: string) {
     const isEvidenceField =
       Boolean(field?.evidence_required) ||
       ['evidence', 'file', 'image', 'attachment'].includes(fieldType);
-    const imageValues = extractImageValues(response.valor_texto);
+    const imageValues = [
+      ...extractImageValues(response.valor_texto),
+      ...extractImageValues(response.valor_seleccion),
+    ];
 
     if (!isEvidenceField && imageValues.length === 0) {
       return [];
@@ -227,6 +231,7 @@ async function debugReportImages(reportUuid: string) {
             field_type: field?.field_type ?? null,
             evidence_required: field?.evidence_required ?? null,
             raw_value: response.valor_texto,
+            raw_selection_value: response.valor_seleccion,
           },
         };
       });

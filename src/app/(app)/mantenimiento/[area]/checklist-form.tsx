@@ -114,6 +114,17 @@ function getFieldKey(campo: FormularioCampo) {
   return campo.field_key || `field_${campo.id}`;
 }
 
+function upsertFieldResponse(
+  currentResponses: FieldResponse[],
+  nextResponse: FieldResponse,
+) {
+  return currentResponses.some((response) => response.field_key === nextResponse.field_key)
+    ? currentResponses.map((response) =>
+        response.field_key === nextResponse.field_key ? nextResponse : response,
+      )
+    : [...currentResponses, nextResponse];
+}
+
 function isNumericOutOfRange(
   value: number | null,
   minimumValue: number | null,
@@ -426,10 +437,20 @@ export function ChecklistForm({
         },
         {},
       );
+      let uploadedImageUrls: string[] = [];
 
       if (evidenceFiles.length > 0) {
         const evidenceOwnerId = (maintenanceRecordUuid || assetUuid).trim();
-        const uploadedImages = [];
+        const uploadedImages: Array<{
+          fieldKey: string;
+          bucket: string;
+          path: string;
+          publicUrl: string;
+          fileName: string;
+          fileSize: number;
+          contentType: string | null;
+          uploadedAt: string;
+        }> = [];
 
         for (const [index, file] of evidenceFiles.entries()) {
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -482,9 +503,25 @@ export function ChecklistForm({
           });
         }
 
+        uploadedImageUrls = uploadedImages.map((image) => image.publicUrl);
         formValues[String(evidenceField?.id ?? VIRTUAL_EVIDENCE_FIELD_ID)] =
-          JSON.stringify(uploadedImages.map((image) => image.publicUrl));
+          JSON.stringify(uploadedImageUrls);
       }
+
+      const evidencePayloadText =
+        uploadedImageUrls.length > 0 ? JSON.stringify(uploadedImageUrls) : null;
+      const evidenceFieldResponse: FieldResponse | null = evidencePayloadText
+        ? {
+            field_id: evidenceField?.id ?? VIRTUAL_EVIDENCE_FIELD_ID,
+            field_key: evidenceField?.field_key ?? VIRTUAL_EVIDENCE_FIELD_KEY,
+            value_text: evidencePayloadText,
+            value_numeric: null,
+            is_out_of_range: false,
+          }
+        : null;
+      const syncedResponses = evidenceFieldResponse
+        ? upsertFieldResponse(responses, evidenceFieldResponse)
+        : responses;
 
       const payloadParaDB: PayloadFilaDB[] = Object.entries(formValues).map(([campoId, valor]) => {
         const campoIdAsNumber = Number.parseInt(campoId, 10);
@@ -518,12 +555,14 @@ export function ChecklistForm({
       }
       formData.delete('evidencias');
       formData.set('payload_para_db', JSON.stringify(payloadParaDB));
+      formData.set('field_responses_payload', JSON.stringify(syncedResponses));
       const result = await action(formData);
       const attemptedPayload = {
         asset_uuid: assetUuid.trim(),
         activo_id: activoId,
         payload_para_db: payloadParaDB,
-        field_responses_payload: responses,
+        field_responses_payload: syncedResponses,
+        uploaded_image_urls: uploadedImageUrls,
       };
 
       if (result.ok) {

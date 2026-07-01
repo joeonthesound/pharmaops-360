@@ -70,11 +70,14 @@ type FormularioCampoMetadata = {
 type RespuestaAuditada = FormularioRespuesta & {
   field_key: string;
   field_label: string;
+  field_type: string | null;
   section_name: string;
   unit: string | null;
   section_order: number;
   field_order: number;
 };
+
+const EVIDENCE_BUCKET = 'evidencias-mantenimiento';
 
 const statusLabel: Record<MaintenanceStatus, string> = {
   draft: 'Borrador',
@@ -92,14 +95,34 @@ const statusClass: Record<MaintenanceStatus, string> = {
   rejected: 'border-red-200 bg-red-50 text-red-800',
 };
 
-function isMaintenanceStatus(status: string | null | undefined): status is MaintenanceStatus {
-  return (
-    status === 'draft' ||
-    status === 'pending_supervisor' ||
-    status === 'pending_quality' ||
-    status === 'approved' ||
-    status === 'rejected'
-  );
+function normalizeMaintenanceStatus(status: string | null | undefined): MaintenanceStatus {
+  const normalizedStatus = String(status ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/-/g, '_');
+
+  if (normalizedStatus === 'pending_supervisor' || normalizedStatus === 'pendiente_supervisor') {
+    return 'pending_supervisor';
+  }
+
+  if (normalizedStatus === 'pending_quality' || normalizedStatus === 'pendiente_calidad') {
+    return 'pending_quality';
+  }
+
+  if (normalizedStatus === 'approved' || normalizedStatus === 'aprobado') {
+    return 'approved';
+  }
+
+  if (
+    normalizedStatus === 'rejected' ||
+    normalizedStatus === 'rechazado' ||
+    normalizedStatus === 'rechazado_tecnico'
+  ) {
+    return 'rejected';
+  }
+
+  return 'draft';
 }
 
 function formatLocation(activo: ActivoResumen | null) {
@@ -144,6 +167,7 @@ function buildOrderedResponses(
         ...respuesta,
         field_key: metadata?.field_key ?? `campo_${respuesta.campo_id ?? 'sin_id'}`,
         field_label: metadata?.field_label ?? `Campo ${respuesta.campo_id ?? '-'}`,
+        field_type: metadata?.field_type ?? null,
         section_name: metadata?.section_name ?? 'Inspeccion tecnica',
         unit: metadata?.unit ?? null,
         section_order: metadata?.section_order ?? 999,
@@ -175,6 +199,108 @@ function formatResponseValue(respuesta: RespuestaAuditada) {
   return 'Sin valor';
 }
 
+function parseEvidenceJson(value: string) {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function extractEvidenceValues(rawValue: string | null) {
+  const trimmedValue = String(rawValue ?? '').trim();
+
+  if (!trimmedValue) {
+    return [];
+  }
+
+  const parsedValue = parseEvidenceJson(trimmedValue);
+
+  if (Array.isArray(parsedValue)) {
+    return parsedValue
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item;
+        }
+
+        if (item && typeof item === 'object') {
+          const candidate = item as {
+            path?: unknown;
+            publicUrl?: unknown;
+            public_url?: unknown;
+            url?: unknown;
+          };
+
+          return String(candidate.publicUrl ?? candidate.public_url ?? candidate.url ?? candidate.path ?? '');
+        }
+
+        return '';
+      })
+      .filter((item) => item.trim().length > 0);
+  }
+
+  if (typeof parsedValue === 'string') {
+    return [parsedValue];
+  }
+
+  if (trimmedValue.includes(EVIDENCE_BUCKET) || /^https?:\/\//i.test(trimmedValue)) {
+    return [trimmedValue];
+  }
+
+  return [];
+}
+
+function normalizeEvidenceUrl(value: string, getPublicUrl: (path: string) => string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(trimmedValue)) {
+    return trimmedValue;
+  }
+
+  const publicStorageMarker = `/storage/v1/object/public/${EVIDENCE_BUCKET}/`;
+  const markerIndex = trimmedValue.indexOf(publicStorageMarker);
+
+  if (markerIndex >= 0) {
+    const path = trimmedValue.slice(markerIndex + publicStorageMarker.length);
+    return getPublicUrl(path);
+  }
+
+  const normalizedPath = trimmedValue.replace(new RegExp(`^${EVIDENCE_BUCKET}/`), '');
+
+  return getPublicUrl(normalizedPath);
+}
+
+function extractEvidenceImageUrls(
+  respuestas: RespuestaAuditada[],
+  getPublicUrl: (path: string) => string,
+) {
+  const imageUrls = respuestas.flatMap((respuesta) => {
+    const serializedValue = `${respuesta.valor_texto ?? ''} ${respuesta.valor_seleccion ?? ''}`;
+    const isEvidenceField =
+      String(respuesta.field_type ?? '').toLowerCase() === 'evidence' ||
+      String(respuesta.field_key ?? '').toLowerCase().includes('evidencia') ||
+      serializedValue.includes(EVIDENCE_BUCKET) ||
+      /https?:\/\/.+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(serializedValue);
+
+    if (!isEvidenceField) {
+      return [];
+    }
+
+    return [
+      ...extractEvidenceValues(respuesta.valor_texto),
+      ...extractEvidenceValues(respuesta.valor_seleccion),
+    ]
+      .map((value) => normalizeEvidenceUrl(value, getPublicUrl))
+      .filter((value): value is string => Boolean(value));
+  });
+
+  return Array.from(new Set(imageUrls));
+}
+
 export default async function PanelAprobacionPage({ params }: AprobarPageProps) {
   const resolvedParams = await params;
   const recordUuid = String(resolvedParams.area ?? '').trim();
@@ -195,7 +321,7 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
     .maybeSingle();
 
   const registro = registroData as MantenimientoRegistro | null;
-  const normalizedStatus = isMaintenanceStatus(registro?.status) ? registro.status : 'draft';
+  const normalizedStatus = normalizeMaintenanceStatus(registro?.status);
 
   const [
     { data: activoData },
@@ -235,6 +361,9 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
   const respuestas = (respuestasData ?? []) as FormularioRespuesta[];
   const campos = (camposData ?? []) as FormularioCampoMetadata[];
   const respuestasAuditadas = buildOrderedResponses(respuestas, campos);
+  const evidenceImageUrls = extractEvidenceImageUrls(respuestasAuditadas, (path) => {
+    return supabase.storage.from(EVIDENCE_BUCKET).getPublicUrl(path).data.publicUrl;
+  });
   const usuario = usuarioData as UsuarioPermisos | null;
   const outOfRangeCount = getOutOfRangeCount(respuestas);
   const canReview = usuario?.can_review === true;
@@ -356,6 +485,37 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
                 );
               })}
             </div>
+          </section>
+
+          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="text-base font-semibold tracking-normal">
+              Evidencias Fotograficas de Inspeccion
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Registro multimedia asociado a la ejecucion tecnica de la inspeccion.
+            </p>
+
+            {evidenceImageUrls.length > 0 ? (
+              <div className="mt-4 grid grid-cols-2 gap-4 print:grid print:grid-cols-2">
+                {evidenceImageUrls.map((imageUrl, index) => (
+                  <figure
+                    className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+                    key={`${imageUrl}-${index}`}
+                  >
+                    <img
+                      alt={`Evidencia fotografica de inspeccion ${index + 1}`}
+                      className="aspect-video w-full object-cover"
+                      loading="lazy"
+                      src={imageUrl}
+                    />
+                  </figure>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 text-center text-xs font-semibold text-slate-400">
+                Sin evidencias multimedia adjuntas para este registro.
+              </div>
+            )}
           </section>
         </div>
 
