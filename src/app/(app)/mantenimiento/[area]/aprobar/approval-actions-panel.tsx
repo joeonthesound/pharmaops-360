@@ -76,8 +76,10 @@ export function ApprovalActionsPanel({
       return;
     }
 
-    if (intent.action === 'reject' && !comments.trim()) {
-      setErrorMessage('El rechazo requiere observaciones obligatorias.');
+    const validationComments = comments.trim();
+
+    if (validationComments.length < 10) {
+      setErrorMessage('Los comentarios de validacion GxP requieren al menos 10 caracteres.');
       return;
     }
 
@@ -88,7 +90,13 @@ export function ApprovalActionsPanel({
         recordUuid,
         signingRole: intent.signingRole,
         action: intent.action,
-        rejectionComments: intent.action === 'reject' ? comments : undefined,
+        validationComments,
+        rejectionComments: intent.action === 'reject' ? validationComments : undefined,
+        clientMetadata: {
+          deviceTimestamp: new Date().toISOString(),
+          clientIp: 'client-ip-pending-server-capture',
+          userAgent: navigator.userAgent,
+        },
       });
 
       if (!result.ok) {
@@ -143,12 +151,14 @@ export function ApprovalActionsPanel({
         <button
           className="h-12 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-200 active:bg-emerald-900 disabled:bg-slate-300"
           disabled={isPending}
-          onClick={() =>
-            submitSignature({
+          onClick={() => {
+            setPendingIntent({
               signingRole: activeBlock.signingRole,
               action: 'approve',
-            })
-          }
+            });
+            setComments('');
+            setErrorMessage(null);
+          }}
           type="button"
         >
           {isPending ? 'Procesando...' : `${activeBlock.approveLabel} firma electronica`}
@@ -169,25 +179,33 @@ export function ApprovalActionsPanel({
           Rechazar
         </button>
 
-        {pendingIntent?.action === 'reject' ? (
-          <div className="grid gap-3 rounded-md border border-red-200 bg-red-50 p-3">
-            <label className="text-sm font-semibold text-red-900" htmlFor="rejection-comments">
-              Comentarios obligatorios de rechazo
+        {pendingIntent ? (
+          <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <label className="text-sm font-semibold text-slate-900" htmlFor="signature-comments">
+              Comentarios de validacion GxP
             </label>
             <textarea
-              className="min-h-28 rounded-md border border-red-200 bg-white p-3 text-sm text-slate-950 outline-none transition focus:border-red-600 focus:ring-2 focus:ring-red-100"
-              id="rejection-comments"
+              className="min-h-28 rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-950 outline-none transition focus:border-slate-600 focus:ring-2 focus:ring-slate-100"
+              id="signature-comments"
               onChange={(event) => setComments(event.target.value)}
-              placeholder="Describa la causa tecnica o documental del rechazo."
+              placeholder="Describa la base tecnica y regulatoria de la decision."
               value={comments}
             />
             <button
-              className="h-11 rounded-md bg-red-700 px-4 text-sm font-semibold text-white transition hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-200 active:bg-red-900 disabled:bg-slate-300"
-              disabled={isPending}
+              className={
+                pendingIntent.action === 'approve'
+                  ? 'h-11 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-200 active:bg-emerald-900 disabled:bg-slate-300'
+                  : 'h-11 rounded-md bg-red-700 px-4 text-sm font-semibold text-white transition hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-200 active:bg-red-900 disabled:bg-slate-300'
+              }
+              disabled={isPending || comments.trim().length < 10}
               onClick={() => submitSignature(pendingIntent)}
               type="button"
             >
-              {isPending ? 'Procesando rechazo...' : 'Confirmar rechazo'}
+              {isPending
+                ? 'Procesando...'
+                : pendingIntent.action === 'approve'
+                  ? 'Confirmar aprobacion'
+                  : 'Confirmar rechazo'}
             </button>
           </div>
         ) : null}

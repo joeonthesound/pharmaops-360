@@ -224,28 +224,83 @@ function formatLocation(activo: Activo) {
 }
 
 function isMaintenanceStatus(status: string | null | undefined): status is MaintenanceStatus {
+  return normalizeMaintenanceStatus(status) !== null;
+}
+
+function normalizeMaintenanceStatus(status: string | null | undefined): MaintenanceStatus | null {
+  const normalizedStatus = String(status ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/-/g, '_');
+
+  if (
+    normalizedStatus === 'draft' ||
+    normalizedStatus === 'borrador' ||
+    normalizedStatus === 'pending_supervisor' ||
+    normalizedStatus === 'pendiente_supervisor' ||
+    normalizedStatus === 'pending_quality' ||
+    normalizedStatus === 'pendiente_calidad' ||
+    normalizedStatus === 'approved' ||
+    normalizedStatus === 'aprobado' ||
+    normalizedStatus === 'rejected' ||
+    normalizedStatus === 'rechazado'
+  ) {
+    if (normalizedStatus === 'borrador') {
+      return 'draft';
+    }
+
+    if (normalizedStatus === 'pendiente_supervisor') {
+      return 'pending_supervisor';
+    }
+
+    if (normalizedStatus === 'pendiente_calidad') {
+      return 'pending_quality';
+    }
+
+    if (normalizedStatus === 'aprobado') {
+      return 'approved';
+    }
+
+    if (normalizedStatus === 'rechazado') {
+      return 'rejected';
+    }
+
+    return normalizedStatus as MaintenanceStatus;
+  }
+
+  return null;
+}
+
+function isStrictPendingSupervisorStatus(status: string | null | undefined) {
+  return String(status ?? '').trim() === 'PENDING_SUPERVISOR';
+}
+
+function isSupervisorOrHigherRole(role: string | null | undefined) {
+  const normalizedRole = String(role ?? '').trim().toLowerCase();
+
   return (
-    status === 'draft' ||
-    status === 'pending_supervisor' ||
-    status === 'pending_quality' ||
-    status === 'approved' ||
-    status === 'rejected'
+    normalizedRole === 'supervisor' ||
+    normalizedRole === 'superadmin' ||
+    normalizedRole === 'administrador' ||
+    normalizedRole === 'calidad' ||
+    normalizedRole === 'propietario / gerencia' ||
+    normalizedRole === 'gerente general'
   );
 }
 
-function canRenderSupervisorSignature(usuario: UsuarioPermisos | null) {
+function isAdministrativeConsultationRole(role: string | null | undefined) {
+  return String(role ?? '').trim().toLowerCase() === 'administrativo';
+}
+
+function canRenderSupervisorSignature(usuario: UsuarioPermisos | null, recordStatus?: string | null) {
   const normalizedRole = String(usuario?.role ?? '').trim().toLowerCase();
 
   return (
+    (isStrictPendingSupervisorStatus(recordStatus) &&
+      ['supervisor', 'administrativo', 'superadmin'].includes(normalizedRole)) ||
     usuario?.can_review === true ||
-    [
-      'supervisor',
-      'calidad',
-      'administrador',
-      'superadmin',
-      'propietario / gerencia',
-      'gerente general',
-    ].includes(normalizedRole)
+    isSupervisorOrHigherRole(usuario?.role)
   );
 }
 
