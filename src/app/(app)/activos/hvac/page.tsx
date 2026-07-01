@@ -1,6 +1,4 @@
-'use client';
-
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   Activity,
   AlertTriangle,
@@ -10,6 +8,7 @@ import {
   ShieldCheck,
   Wind,
 } from 'lucide-react';
+import { getHvacDashboard } from '@/modules/activos/actions/get-hvac-dashboard';
 
 type CleanroomCard = {
   className: string;
@@ -27,17 +26,7 @@ type Notification = {
   timestamp: string;
 };
 
-type Equipment = {
-  code: string;
-  name: string;
-  status: 'OPERATIVO' | 'MANTENIMIENTO';
-  location: string;
-  calibration: string;
-  maintenance: string;
-  filter: string;
-};
-
-const assetProfileUuid = 'd1c86fd0-7263-46f8-b9f9-5f62c85e10c9';
+type HealthStatus = 'Healthy' | 'Attention' | 'Critical';
 
 const cleanroomClasses: CleanroomCard[] = [
   {
@@ -101,46 +90,20 @@ const notifications: Notification[] = [
   },
 ];
 
-const equipmentList: Equipment[] = [
-  {
-    code: 'HVAC-01',
-    name: 'Air Handling Unit UMA-01',
-    status: 'OPERATIVO',
-    location: 'Area Blanca / Produccion',
-    calibration: 'Last: 2026-06-15 / Due: 2026-09-15',
-    maintenance: 'Last: 2026-06-15 / Next: 2026-07-15',
-    filter: 'HEPA H14-F7 / Delta P: Normal',
-  },
-  {
-    code: 'HVAC-02',
-    name: 'Air Handling Unit UMA-02',
-    status: 'MANTENIMIENTO',
-    location: 'Produccion Solidos / Zona B',
-    calibration: 'Last: 2026-05-28 / Due: 2026-08-28',
-    maintenance: 'Last: 2026-06-10 / Next: 2026-07-10',
-    filter: 'HEPA H14-F9 / Delta P: Attention',
-  },
-  {
-    code: 'HVAC-03',
-    name: 'Extractor e Inyector Ambiental',
-    status: 'OPERATIVO',
-    location: 'Techo Tecnico / Zona C',
-    calibration: 'Last: 2026-06-02 / Due: 2026-09-02',
-    maintenance: 'Last: 2026-06-18 / Next: 2026-07-18',
-    filter: 'Pre-Filtro G4 / Delta P: Normal',
-  },
-];
-
 const severityClasses: Record<Notification['severity'], string> = {
   CRITICAL: 'border-rose-200 bg-rose-50 text-rose-700',
   HIGH: 'border-orange-200 bg-orange-50 text-[#C76E00]',
   MEDIUM: 'border-amber-200 bg-amber-50 text-amber-700',
 };
 
-const statusClasses: Record<Equipment['status'], string> = {
-  OPERATIVO: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  MANTENIMIENTO: 'bg-amber-50 text-amber-700 border-amber-200',
+const healthStatusClasses: Record<HealthStatus, string> = {
+  Healthy: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Attention: 'bg-amber-50 text-amber-700 border-amber-200',
+  Critical: 'bg-rose-50 text-rose-700 border-rose-200',
 };
+
+const gaugeRadius = 48;
+const gaugeCircumference = 2 * Math.PI * gaugeRadius;
 
 function MetricRow({ label, value, limit }: { label: string; value: string; limit: string }) {
   return (
@@ -165,8 +128,17 @@ function EquipmentMetaRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function HvacFleetDashboardPage() {
-  const router = useRouter();
+export default async function HvacFleetDashboardPage() {
+  const { assets, counters, healthScore } = await getHvacDashboard();
+  const normalizedHealthScore = Math.min(Math.max(healthScore, 0), 100);
+  const gaugeDashOffset =
+    gaugeCircumference * (1 - normalizedHealthScore / 100);
+  const dashboardCounters = [
+    ['Total Assets', counters.total, 'bg-slate-100 text-slate-700 border-slate-200'],
+    ['Healthy', counters.healthy, 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+    ['Attention', counters.attention, 'bg-amber-50 text-amber-700 border-amber-200'],
+    ['Critical', counters.critical, 'bg-rose-50 text-rose-700 border-rose-200'],
+  ] as const;
 
   return (
     <main className="min-h-screen bg-[#F8FAFC] px-4 py-6 text-slate-950">
@@ -228,7 +200,7 @@ export default function HvacFleetDashboardPage() {
                     cx="60"
                     cy="60"
                     fill="none"
-                    r="48"
+                    r={gaugeRadius}
                     stroke="#E2E8F0"
                     strokeWidth="12"
                   />
@@ -236,16 +208,18 @@ export default function HvacFleetDashboardPage() {
                     cx="60"
                     cy="60"
                     fill="none"
-                    r="48"
+                    r={gaugeRadius}
                     stroke="#10B981"
-                    strokeDasharray={`${2 * Math.PI * 48}`}
-                    strokeDashoffset={`${2 * Math.PI * 48 * (1 - 0.941)}`}
+                    strokeDasharray={`${gaugeCircumference}`}
+                    strokeDashoffset={`${gaugeDashOffset}`}
                     strokeLinecap="round"
                     strokeWidth="12"
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-black text-slate-950">94.1%</span>
+                  <span className="text-4xl font-black text-slate-950">
+                    {normalizedHealthScore.toFixed(1)}%
+                  </span>
                   <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
                     Efficiency
                   </span>
@@ -253,12 +227,7 @@ export default function HvacFleetDashboardPage() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  ['Total Assets', '28', 'bg-slate-100 text-slate-700 border-slate-200'],
-                  ['Healthy', '21', 'bg-emerald-50 text-emerald-700 border-emerald-200'],
-                  ['Attention', '5', 'bg-amber-50 text-amber-700 border-amber-200'],
-                  ['Critical', '2', 'bg-rose-50 text-rose-700 border-rose-200'],
-                ].map(([label, value, className]) => (
+                {dashboardCounters.map(([label, value, className]) => (
                   <div className={`rounded-lg border p-4 ${className}`} key={label}>
                     <p className="text-[11px] font-black uppercase tracking-wide">{label}</p>
                     <p className="mt-2 text-3xl font-black">{value}</p>
@@ -304,43 +273,54 @@ export default function HvacFleetDashboardPage() {
         </section>
 
         <section className="grid gap-4 lg:grid-cols-3">
-          {equipmentList.map((equipment) => (
+          {assets.map((asset) => (
             <article
               className="rounded-lg border border-slate-100 bg-white p-5 shadow-sm"
-              key={equipment.code}
+              key={asset.uuid}
             >
               <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
                 <div>
                   <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                    {equipment.code}
+                    {asset.asset_code}
                   </p>
                   <h2 className="mt-1 text-lg font-black leading-6 text-slate-950">
-                    {equipment.name}
+                    {asset.asset_name}
                   </h2>
                 </div>
                 <span
-                  className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${statusClasses[equipment.status]}`}
+                  className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${healthStatusClasses[asset.healthStatus]}`}
                 >
-                  {equipment.status}
+                  {asset.healthStatus}
                 </span>
               </div>
 
               <div className="py-3">
-                <EquipmentMetaRow label="Location" value={equipment.location} />
-                <EquipmentMetaRow label="Last Calibration / Due Date" value={equipment.calibration} />
-                <EquipmentMetaRow label="Last Maintenance / Next Maintenance" value={equipment.maintenance} />
-                <EquipmentMetaRow label="Primary Filter Model & Delta P" value={equipment.filter} />
+                <EquipmentMetaRow
+                  label="Location"
+                  value={asset.location_detail || 'Sin ubicacion registrada'}
+                />
+                <EquipmentMetaRow
+                  label="Operational Asset Status"
+                  value={asset.status || 'Sin estado registrado'}
+                />
+                <EquipmentMetaRow
+                  label="Latest Maintenance Status"
+                  value={asset.latestMaintenanceStatus || 'Sin registros'}
+                />
+                <EquipmentMetaRow
+                  label="Maintenance Records"
+                  value={String(asset.maintenanceCount)}
+                />
               </div>
 
-              <button
+              <Link
+                href={`/activos/hvac/ver/${asset.uuid}`}
                 className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-black text-slate-900 transition hover:border-slate-900 hover:bg-slate-900 hover:text-white"
-                onClick={() => router.push(`/activos/hvac/ver/${assetProfileUuid}`)}
-                type="button"
               >
                 <Activity aria-hidden="true" size={17} />
                 Consultar
                 <ArrowRight aria-hidden="true" size={16} />
-              </button>
+              </Link>
             </article>
           ))}
         </section>
