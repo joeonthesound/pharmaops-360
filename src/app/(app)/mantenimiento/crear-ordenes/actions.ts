@@ -137,13 +137,17 @@ const HVAC_BASELINE_TEMPLATE_FIELDS: MaintenanceTemplateField[] = [
 ];
 
 type AssetForOrder = {
+  id: number | null;
   uuid: string;
   asset_code: string | null;
   asset_name: string | null;
   asset_type: string | null;
+  area: string | null;
+  location_detail: string | null;
 };
 
 type UsuarioRolRow = {
+  id: number | null;
   can_approve: boolean | null;
   can_create_assets: boolean | null;
 };
@@ -156,6 +160,7 @@ type SupabaseMutationError = {
 } | null;
 
 const HVAC_TEMPLATE_CODE = 'TMP-HVAC-PM';
+const MAX_INSERT_RECOVERY_ATTEMPTS = 6;
 
 function normalizeText(value: string | null | undefined) {
   return String(value ?? '').normalize('NFC').trim();
@@ -211,17 +216,22 @@ async function canCreateOrders() {
 
   const { data } = await supabase
     .from('usuarios_roles')
-    .select('can_approve, can_create_assets')
+    .select('id, can_approve, can_create_assets')
     .eq('user_email', userEmail)
     .eq('active', true);
 
   const profiles = (data ?? []) as UsuarioRolRow[];
+  const privilegedProfile =
+    profiles.find((profile) => profile.can_approve === true || profile.can_create_assets === true) ??
+    null;
 
   return {
     allowed: profiles.some(
       (profile) => profile.can_approve === true || profile.can_create_assets === true,
     ),
     userEmail,
+    userId: user?.id ?? null,
+    profileId: privilegedProfile?.id ?? profiles[0]?.id ?? null,
   };
 }
 
@@ -359,6 +369,240 @@ function buildInitialLayout(templateFields: MaintenanceTemplateField[]) {
   }));
 }
 
+function extractMissingRequiredColumn(error: SupabaseMutationError) {
+  const message = `${error?.message ?? ''} ${error?.details ?? ''}`;
+  const quotedColumnMatch = message.match(/column\s+"([^"]+)"/i);
+
+  if (quotedColumnMatch?.[1]) {
+    return quotedColumnMatch[1];
+  }
+
+  const plainColumnMatch = message.match(/null value in column\s+([a-zA-Z0-9_]+)/i);
+
+  return plainColumnMatch?.[1] ?? null;
+}
+
+function buildRequiredColumnValue({
+  column,
+  access,
+  asset,
+  assetCode,
+  assetUuid,
+  assetType,
+  fieldResponsesPayload,
+  initialLayout,
+  now,
+  templateCode,
+}: {
+  column: string;
+  access: Awaited<ReturnType<typeof canCreateOrders>>;
+  asset: AssetForOrder;
+  assetCode: string;
+  assetUuid: string;
+  assetType: string;
+  fieldResponsesPayload: Array<Record<string, unknown>>;
+  initialLayout: Array<Record<string, unknown>>;
+  now: string;
+  templateCode: string;
+}) {
+  const normalizedColumn = column.toLowerCase();
+
+  if (normalizedColumn === 'area') {
+    return normalizeText(asset.area) || normalizeText(asset.location_detail) || assetType;
+  }
+
+  if (normalizedColumn === 'asset_uuid' || normalizedColumn === 'activo_uuid') {
+    return assetUuid;
+  }
+
+  if (normalizedColumn === 'asset_id' || normalizedColumn === 'activo_id') {
+    return asset.id ?? assetUuid;
+  }
+
+  if (
+    normalizedColumn === 'created_by' ||
+    normalizedColumn === 'created_by_user_id' ||
+    normalizedColumn === 'user_id' ||
+    normalizedColumn === 'created_user_id'
+  ) {
+    return access.userId ?? access.userEmail;
+  }
+
+  if (
+    normalizedColumn === 'created_by_email' ||
+    normalizedColumn === 'created_email' ||
+    normalizedColumn === 'created_user_email' ||
+    normalizedColumn === 'operator_email'
+  ) {
+    return access.userEmail;
+  }
+
+  if (
+    normalizedColumn === 'tecnico_id' ||
+    normalizedColumn === 'technician_id' ||
+    normalizedColumn === 'responsable_id' ||
+    normalizedColumn === 'created_by_profile_id'
+  ) {
+    return access.profileId ?? access.userId ?? access.userEmail;
+  }
+
+  if (
+    normalizedColumn === 'field_responses_payload' ||
+    normalizedColumn === 'responses_payload' ||
+    normalizedColumn === 'initial_responses_payload'
+  ) {
+    return fieldResponsesPayload;
+  }
+
+  if (
+    normalizedColumn === 'initial_layout' ||
+    normalizedColumn === 'layout_payload' ||
+    normalizedColumn === 'template_payload'
+  ) {
+    return initialLayout;
+  }
+
+  if (normalizedColumn === 'template_code') {
+    return templateCode;
+  }
+
+  if (normalizedColumn === 'status') {
+    return 'PENDING_TECHNICIAN';
+  }
+
+  if (
+    normalizedColumn === 'scheduled_date' ||
+    normalizedColumn === 'executed_at' ||
+    normalizedColumn === 'created_at'
+  ) {
+    return now;
+  }
+
+  if (normalizedColumn === 'asset_code') {
+    return assetCode;
+  }
+
+  return undefined;
+}
+
+async function insertMaintenanceRecordWithSchemaRecovery({
+  access,
+  asset,
+  assetCode,
+  assetUuid,
+  assetType,
+  basePayload,
+  fieldResponsesPayload,
+  initialLayout,
+  now,
+  supabase,
+  templateCode,
+}: {
+  access: Awaited<ReturnType<typeof canCreateOrders>>;
+  asset: AssetForOrder;
+  assetCode: string;
+  assetUuid: string;
+  assetType: string;
+  basePayload: Record<string, unknown>;
+  fieldResponsesPayload: Array<Record<string, unknown>>;
+  initialLayout: Array<Record<string, unknown>>;
+  now: string;
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+  templateCode: string;
+}) {
+  const attemptedColumns = new Set(Object.keys(basePayload));
+  const payload = { ...basePayload };
+  const recoveryLog: Array<{
+    attempt: number;
+    recoveredColumn?: string;
+    error: ReturnType<typeof sanitizeSupabaseError>;
+  }> = [];
+
+  for (let attempt = 1; attempt <= MAX_INSERT_RECOVERY_ATTEMPTS; attempt += 1) {
+    const { data, error } = await supabase
+      .from('mantenimientos_registros')
+      .insert(payload)
+      .select('uuid')
+      .single();
+
+    if (!error && data) {
+      return {
+        data,
+        error: null,
+        recoveryLog,
+        payload,
+      };
+    }
+
+    recoveryLog.push({
+      attempt,
+      error: sanitizeSupabaseError(error),
+    });
+
+    if (error?.code !== '23502') {
+      return {
+        data: null,
+        error,
+        recoveryLog,
+        payload,
+      };
+    }
+
+    const missingColumn = extractMissingRequiredColumn(error);
+
+    if (!missingColumn || attemptedColumns.has(missingColumn)) {
+      return {
+        data: null,
+        error,
+        recoveryLog,
+        payload,
+      };
+    }
+
+    const recoveredValue = buildRequiredColumnValue({
+      column: missingColumn,
+      access,
+      asset,
+      assetCode,
+      assetUuid,
+      assetType,
+      fieldResponsesPayload,
+      initialLayout,
+      now,
+      templateCode,
+    });
+
+    if (recoveredValue === undefined || recoveredValue === null || recoveredValue === '') {
+      return {
+        data: null,
+        error,
+        recoveryLog,
+        payload,
+      };
+    }
+
+    payload[missingColumn] = recoveredValue;
+    attemptedColumns.add(missingColumn);
+    recoveryLog[recoveryLog.length - 1].recoveredColumn = missingColumn;
+
+    console.warn('[CREAR ORDENES] Recuperando columna requerida por esquema Supabase', {
+      attempt,
+      missingColumn,
+      recoveredValueType: Array.isArray(recoveredValue) ? 'array' : typeof recoveredValue,
+    });
+  }
+
+  return {
+    data: null,
+    error: {
+      code: 'MAX_RECOVERY_ATTEMPTS',
+      message: 'Se excedio el numero de intentos de recuperacion del esquema.',
+    },
+    recoveryLog,
+    payload,
+  };
+}
+
 export async function generateMaintenanceOrder(
   input: GenerateMaintenanceOrderInput,
 ): Promise<GenerateMaintenanceOrderResult> {
@@ -383,7 +627,7 @@ export async function generateMaintenanceOrder(
   const supabase = await createSupabaseServerClient();
   const { data: assetData, error: assetError } = await supabase
     .from('activos')
-    .select('uuid, asset_code, asset_name, asset_type')
+    .select('id, uuid, asset_code, asset_name, asset_type, area, location_detail')
     .eq('uuid', assetUuid)
     .maybeSingle();
 
@@ -446,36 +690,50 @@ export async function generateMaintenanceOrder(
     status: 'PENDING_TECHNICIAN',
   });
 
-  const { data: recordData, error: recordError } = await supabase
-    .from('mantenimientos_registros')
-    .insert({
-      record_code: buildRecordCode(assetCode),
-      asset_code: assetCode,
+  const recordPayload = {
+    record_code: buildRecordCode(assetCode),
+    asset_code: assetCode,
+    template_code: templateCode,
+    assigned_technician: access.userEmail,
+    status: 'PENDING_TECHNICIAN',
+    executed_at: now,
+    notes: JSON.stringify({
+      asset_uuid_origen: assetUuid,
+      asset_type: assetType,
       template_code: templateCode,
-      assigned_technician: access.userEmail,
-      status: 'PENDING_TECHNICIAN',
-      executed_at: now,
-      notes: JSON.stringify({
-        asset_uuid_origen: assetUuid,
-        asset_type: assetType,
-        template_code: templateCode,
-        captured_at: now,
-        progress_step: 1,
-        initial_layout: initialLayout,
-        field_responses_payload: fieldResponsesPayload,
-        generated_by: access.userEmail,
-        gxp_initialization: {
-          phase: 'Tecnico - Confeccion',
-          status: 'PENDING_TECHNICIAN',
-          source:
-            templateFields.some((field) => field.id < 0)
-              ? 'hvac_static_baseline_fallback'
-              : 'database_template',
-        },
-      }),
-    })
-    .select('uuid')
-    .single();
+      captured_at: now,
+      progress_step: 1,
+      initial_layout: initialLayout,
+      field_responses_payload: fieldResponsesPayload,
+      generated_by: access.userEmail,
+      gxp_initialization: {
+        phase: 'Tecnico - Confeccion',
+        status: 'PENDING_TECHNICIAN',
+        source:
+          templateFields.some((field) => field.id < 0)
+            ? 'hvac_static_baseline_fallback'
+            : 'database_template',
+      },
+    }),
+  };
+  const {
+    data: recordData,
+    error: recordError,
+    recoveryLog,
+    payload: attemptedPayload,
+  } = await insertMaintenanceRecordWithSchemaRecovery({
+    access,
+    asset,
+    assetCode,
+    assetUuid,
+    assetType,
+    basePayload: recordPayload,
+    fieldResponsesPayload,
+    initialLayout,
+    now,
+    supabase,
+    templateCode,
+  });
 
   if (recordError || !recordData) {
     console.error('[CREAR ORDENES] Error insertando orden de mantenimiento', {
@@ -485,6 +743,7 @@ export async function generateMaintenanceOrder(
       templateCode,
       fields: templateFields.length,
       error: sanitizeSupabaseError(recordError),
+      recoveryLog,
     });
 
     return {
@@ -493,12 +752,14 @@ export async function generateMaintenanceOrder(
       debug: {
         stage: 'mantenimientos_registros_insert',
         supabase_error: sanitizeSupabaseError(recordError),
+        recovery_log: recoveryLog,
         attemptedPayload: {
-          asset_code: assetCode,
-          template_code: templateCode,
-          assigned_technician: access.userEmail,
-          status: 'PENDING_TECHNICIAN',
-          executed_at: now,
+          columns: Object.keys(attemptedPayload),
+          asset_code: attemptedPayload.asset_code,
+          template_code: attemptedPayload.template_code,
+          assigned_technician: attemptedPayload.assigned_technician,
+          status: attemptedPayload.status,
+          executed_at: attemptedPayload.executed_at,
           initial_layout_count: initialLayout.length,
         },
       },
