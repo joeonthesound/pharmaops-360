@@ -91,6 +91,7 @@ export const NAVIGATION_TREE: NavigationNode[] = [
     href: '/mantenimiento',
     icon: 'LayoutDashboard',
     rolesAllowed: [
+      'Superadmin',
       'Administrador',
       'Propietario / Gerencia',
       'Calidad',
@@ -131,6 +132,12 @@ export const NAVIGATION_TREE: NavigationNode[] = [
             rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
           },
         ],
+      },
+      {
+        title: 'Crear Ordenes',
+        href: '/mantenimiento/crear-ordenes',
+        icon: 'FlaskConical',
+        rolesAllowed: ['Superadmin'],
       },
     ],
   },

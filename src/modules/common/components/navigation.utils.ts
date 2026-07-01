@@ -64,6 +64,10 @@ function canDisplayNode(node: NavigationNode, role: string) {
     return true;
   }
 
+  if (nodeRoles.length === 1 && normalizeRole(nodeRoles[0] ?? '') === 'superadmin') {
+    return role.trim() === 'Superadmin';
+  }
+
   const roleAliases = getRoleAliases(role);
 
   return nodeRoles.some((nodeRole) => roleAliases.has(normalizeRole(nodeRole)));
