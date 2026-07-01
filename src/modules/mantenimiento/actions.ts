@@ -528,7 +528,9 @@ export async function signMaintenanceRecordAction(
     };
   }
 
-  if (maintenanceRecord.status === 'approved' || maintenanceRecord.status === 'rejected') {
+  const normalizedMaintenanceStatus = normalizeMaintenanceRecordStatus(maintenanceRecord.status);
+
+  if (normalizedMaintenanceStatus === 'approved' || normalizedMaintenanceStatus === 'rejected') {
     return {
       ok: false,
       message: 'La orden ya se encuentra cerrada y no admite nuevas firmas.',
@@ -644,6 +646,7 @@ export async function signMaintenanceRecordAction(
     : updatePayload.status;
 
   revalidatePath(`/mantenimiento/${recordUuid}/aprobar`);
+  revalidatePath(`/mantenimiento/hvac/rui/ht`);
   revalidatePath('/dashboard');
 
   return {

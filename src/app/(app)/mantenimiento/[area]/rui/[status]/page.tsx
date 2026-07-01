@@ -1,3 +1,4 @@
+import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import HvacAssetsPage from '../../../hvac/activos/page';
 
 type RuiStatusListingPageProps = {
@@ -34,6 +35,15 @@ export default async function RuiStatusListingPage({
   params,
   searchParams,
 }: RuiStatusListingPageProps) {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  console.log('[TELEMETRIA FORENSE F5]', {
+      hasUser: !!user,
+      userEmail: user?.email,
+      authError: authError?.message || null,
+      cookiesPresent: typeof window === 'undefined' ? 'Server Context Execution' : 'Client Context Mismatch'
+  });
+
   const resolvedParams = await params;
   const resolvedSearchParams = searchParams ? await searchParams : {};
 

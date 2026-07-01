@@ -1,5 +1,5 @@
 ﻿import Link from 'next/link';
-import { supabase } from '@/shared/lib/supabase';
+import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import type { Activo, ActivoEstado } from '@/modules/activos/activos.interface';
 
 type DashboardPageProps = {
@@ -24,10 +24,15 @@ type MaintenanceStatus =
   | 'pending_technician'
   | 'pending_supervisor'
   | 'pending_quality'
+  | 'pending_management'
   | 'rejected'
   | 'approved'
   | 'Draft'
   | 'PENDING_TECHNICIAN'
+  | 'PENDING_SUPERVISOR'
+  | 'PENDING_QUALITY'
+  | 'PENDING_MANAGEMENT'
+  | 'APPROVED'
   | 'Pending_Supervisor'
   | 'Pending_Quality'
   | 'Rejected'
@@ -65,10 +70,15 @@ const orderStatusClasses: Record<MantenimientoRegistro['status'], string> = {
   pending_technician: 'border-indigo-200 bg-indigo-50 text-indigo-800',
   pending_supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
   pending_quality: 'border-sky-200 bg-sky-50 text-sky-800',
+  pending_management: 'border-purple-200 bg-purple-50 text-purple-800',
   rejected: 'border-red-200 bg-red-50 text-red-800',
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   Draft: 'border-slate-200 bg-slate-100 text-slate-700',
   PENDING_TECHNICIAN: 'border-indigo-200 bg-indigo-50 text-indigo-800',
+  PENDING_SUPERVISOR: 'border-amber-200 bg-amber-50 text-amber-800',
+  PENDING_QUALITY: 'border-sky-200 bg-sky-50 text-sky-800',
+  PENDING_MANAGEMENT: 'border-purple-200 bg-purple-50 text-purple-800',
+  APPROVED: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   Pending_Supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
   Pending_Quality: 'border-sky-200 bg-sky-50 text-sky-800',
   Rejected: 'border-red-200 bg-red-50 text-red-800',
@@ -87,10 +97,15 @@ const orderStatusLabel: Record<MantenimientoRegistro['status'], string> = {
   pending_technician: 'Pendiente Tecnico',
   pending_supervisor: 'Pendiente Supervisor',
   pending_quality: 'Pendiente Calidad',
+  pending_management: 'Pendiente Gerencia',
   rejected: 'Rechazado',
   approved: 'Aprobado',
   Draft: 'Borrador',
   PENDING_TECHNICIAN: 'Pendiente Tecnico',
+  PENDING_SUPERVISOR: 'Pendiente Supervisor',
+  PENDING_QUALITY: 'Pendiente Calidad',
+  PENDING_MANAGEMENT: 'Pendiente Gerencia',
+  APPROVED: 'Aprobado',
   Pending_Supervisor: 'Pendiente Supervisor',
   Pending_Quality: 'Pendiente Calidad',
   Rejected: 'Rechazado',
@@ -130,6 +145,9 @@ const tabs: Array<{ href: string; label: string; value: DashboardView }> = [
 const SENT_STATUSES: Array<MantenimientoRegistro['status']> = [
   'pending_supervisor',
   'pending_quality',
+  'PENDING_SUPERVISOR',
+  'PENDING_QUALITY',
+  'PENDING_MANAGEMENT',
   'Pending_Supervisor',
   'Pending_Quality',
   'Pendiente_Supervisor',
@@ -159,6 +177,10 @@ const CLOSED_WORKFLOW_STATUSES: Array<MantenimientoRegistro['status']> = [
   'Completed',
   'Cerrado',
 ];
+const HISTORY_STATUSES = [
+  'APPROVED',
+  'PENDING_MANAGEMENT',
+] as const satisfies ReadonlyArray<MantenimientoRegistro['status']>;
 const CLOSED_STATUS_FILTER = `(${CLOSED_WORKFLOW_STATUSES.map((status) => `"${status}"`).join(',')})`;
 
 function formatLocation(activo: Activo | null | undefined) {
@@ -179,6 +201,23 @@ function normalizeView(value: string | undefined): DashboardView {
   }
 
   return 'pending';
+}
+
+function isGlobalDashboardRole(role: string | null | undefined) {
+  const normalizedRole = String(role ?? '').trim().toLowerCase();
+
+  return (
+    normalizedRole === 'superadmin' ||
+    normalizedRole === 'administrativo' ||
+    normalizedRole === 'administrador' ||
+    normalizedRole === 'gerencia' ||
+    normalizedRole === 'propietario / gerencia' ||
+    normalizedRole === 'gerente general'
+  );
+}
+
+function isGlobalDashboardEmail(email: string | null | undefined) {
+  return String(email ?? '').trim().toLowerCase() === 'gerencia@exagonlabs.com';
 }
 
 function calculateDaysRemaining(targetDate: string | null | undefined) {
@@ -207,8 +246,50 @@ function resolveRelatedAsset(registro: DashboardOrder) {
   return registro.activos ?? undefined;
 }
 
+async function attachAssetsToOrders(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  orders: DashboardOrder[],
+) {
+  const assetCodes = Array.from(
+    new Set(
+      orders
+        .map((order) => String(order.asset_code ?? '').trim())
+        .filter((assetCode) => assetCode.length > 0),
+    ),
+  );
+
+  if (assetCodes.length === 0) {
+    return orders.map((order) => ({ ...order, activos: null }));
+  }
+
+  const { data: activosData, error: activosError } = await supabase
+    .from('activos')
+    .select('*')
+    .in('asset_code', assetCodes);
+
+  if (activosError) {
+    console.log('[DEBUG RLS ISOLATION] Asset lookup failed during split fetch:', {
+      code: activosError.code,
+      message: activosError.message,
+    });
+
+    return orders.map((order) => ({ ...order, activos: null }));
+  }
+
+  console.log('[DEBUG RLS ISOLATION] Asset rows resolved after split fetch:', activosData?.length || 0);
+
+  const activosByCode = new Map(
+    (activosData ?? []).map((activo) => [String(activo.asset_code ?? ''), activo]),
+  );
+
+  return orders.map((order) => ({
+    ...order,
+    activos: activosByCode.get(String(order.asset_code ?? '')) ?? null,
+  })) as DashboardOrder[];
+}
+
 function getOrderHref(registro: MantenimientoRegistro, activo?: ActivoConUuid) {
-  if (registro.status === 'approved') {
+  if (HISTORY_STATUSES.includes(registro.status as (typeof HISTORY_STATUSES)[number])) {
     return `/mantenimiento/hvac/rui/ht/${registro.uuid}`;
   }
 
@@ -259,6 +340,22 @@ function isClosedWorkflowRecord(registro: MantenimientoRegistro) {
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const technicianEmail = user?.email?.trim().toLowerCase() ?? null;
+  const { data: usuarioData } = technicianEmail
+    ? await supabase
+        .from('usuarios_roles')
+        .select('role')
+        .eq('user_email', technicianEmail)
+        .eq('active', true)
+        .maybeSingle()
+    : { data: null };
+  const isGlobalDashboardUser = isGlobalDashboardRole(
+    (usuarioData as { role?: string | null } | null)?.role,
+  ) || isGlobalDashboardEmail(technicianEmail);
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const currentView = normalizeView(resolvedSearchParams.view);
   const historySearchTerm = String(resolvedSearchParams.q ?? '');
@@ -274,7 +371,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 1 [Llamada a Ordenes Activas]', {
     table: 'mantenimientos_registros',
     select: '*, activos(*)',
-    status: currentView === 'history' ? ['approved'] : ACTIVE_WORKFLOW_STATUSES,
+    status: currentView === 'history' ? HISTORY_STATUSES : ACTIVE_WORKFLOW_STATUSES,
     excludedStatus: effectiveExcludedStatuses,
     view: currentView,
   });
@@ -282,16 +379,30 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   try {
     let registrosQuery = supabase
       .from('mantenimientos_registros')
-      .select('*, activos!fk_mantenimientos_registros_activos(*)')
+      .select('*')
       .order('executed_at', { ascending: false });
 
-    registrosQuery =
-      currentView === 'history'
-        ? registrosQuery.eq('status', 'approved')
-        : registrosQuery
+    if (currentView === 'history') {
+      if (!isGlobalDashboardUser) {
+        registrosQuery = registrosQuery.ilike('assigned_technician', technicianEmail ?? '');
+      }
+    } else {
+      registrosQuery = registrosQuery
             .in('status', ACTIVE_WORKFLOW_STATUSES)
-            .not('status', 'in', CLOSED_STATUS_FILTER)
-            .is('quality_signed_at', null);
+            .not('status', 'in', CLOSED_STATUS_FILTER);
+
+      if (currentView !== 'sent') {
+        registrosQuery = registrosQuery.is('quality_signed_at', null);
+      }
+    }
+
+    const { data: rawOrders } = await supabase
+      .from('mantenimientos_registros')
+      .select('id, status, asset_code');
+    console.log('[DEBUG RLS ISOLATION] Raw orders without asset join:', rawOrders?.length || 0);
+    console.log('[DEBUG HISTORIAL STATUS MAP]', {
+      statuses: Array.from(new Set((rawOrders ?? []).map((order) => order.status))),
+    });
 
     const { data: registrosData, error: registrosError } = await registrosQuery;
 
@@ -309,17 +420,23 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         },
       });
     } else {
+      const finalRecords = await attachAssetsToOrders(
+        supabase,
+        (registrosData ?? []).map((registro) => ({
+          ...registro,
+          activos: null,
+        })) as DashboardOrder[],
+      );
+
       dashboardOrders =
         currentView === 'history'
-          ? ((registrosData ?? []) as DashboardOrder[])
-          : ((registrosData ?? []) as DashboardOrder[]).filter(
-              (registro) => !isClosedWorkflowRecord(registro),
-            );
+          ? finalRecords
+          : finalRecords.filter((registro) => !isClosedWorkflowRecord(registro));
     }
 
     console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 2 [Resultado / Respuesta del Servidor]', {
       result: queryError ? 'supabase_error' : 'supabase_success',
-      selectClause: queryError ? null : '*, activos!fk_mantenimientos_registros_activos(*)',
+      selectClause: queryError ? null : 'mantenimientos_registros(*) + split activos lookup',
       orderRecords: dashboardOrders.length,
       assetCodes: dashboardOrders.map((orden) => orden.asset_code),
       joinedAssetCodes: dashboardOrders.map((orden) => resolveRelatedAsset(orden)?.asset_code ?? null),
@@ -359,7 +476,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const historyOrders =
     currentView === 'history'
       ? dashboardOrders
-      : dashboardOrders.filter((registro) => registro.status === 'approved');
+      : dashboardOrders.filter((registro) =>
+          HISTORY_STATUSES.includes(registro.status as (typeof HISTORY_STATUSES)[number]),
+        );
   const normalizedHistorySearchTerm = historySearchTerm.trim().toLowerCase();
   const filteredHistoryOrders = historyOrders.filter((registro) => {
     const activo = resolveRelatedAsset(registro);
@@ -550,7 +669,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 activo?.asset_code ?? registro.asset_code ?? 'Activo no disponible';
               const displayAssetName = activo?.asset_name ?? 'Orden de mantenimiento aprobada';
               const displayLocation = formatLocation(activo);
-              const actionHref = getOrderHref(registro, activo);
+              const actionHref = `/mantenimiento/hvac/rui/ht/${registro.uuid}`;
 
               return (
                 <article

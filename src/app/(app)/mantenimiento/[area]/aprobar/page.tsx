@@ -199,6 +199,12 @@ function formatResponseValue(respuesta: RespuestaAuditada) {
   return 'Sin valor';
 }
 
+function isStringifiedImageArray(value: string) {
+  const trimmedValue = value.trim();
+
+  return trimmedValue.startsWith('[') && trimmedValue.includes('http');
+}
+
 function parseEvidenceJson(value: string) {
   try {
     return JSON.parse(value) as unknown;
@@ -462,6 +468,8 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {respuestasAuditadas.map((respuesta) => {
                 const value = formatResponseValue(respuesta);
+                const isImageString =
+                  typeof value === 'string' && isStringifiedImageArray(value);
 
                 return (
                   <article
@@ -478,7 +486,11 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
                         </p>
                       </div>
                       <div className="flex items-end justify-between gap-3">
-                        <p className="text-base font-semibold text-slate-700">{value}</p>
+                        <p className="text-base font-semibold text-slate-700">
+                          {isImageString
+                            ? 'Evidencia fotografica adjunta (ver seccion inferior)'
+                            : value}
+                        </p>
                       </div>
                     </div>
                   </article>
