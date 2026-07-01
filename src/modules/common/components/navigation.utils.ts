@@ -14,17 +14,36 @@ function getRoleAliases(role: string) {
   const normalizedRole = normalizeRole(role);
   const aliases = new Set([normalizedRole]);
 
-  if (normalizedRole.includes('superadmin')) {
+  if (
+    normalizedRole.includes('superadmin') ||
+    normalizedRole.includes('superusuario') ||
+    normalizedRole.includes('administrador top') ||
+    normalizedRole.includes('top admin') ||
+    normalizedRole.includes('root')
+  ) {
     aliases.add('superadmin');
+    aliases.add('superusuario');
+    aliases.add('administrador top');
   }
 
-  if (normalizedRole.includes('administrador')) {
+  if (
+    normalizedRole.includes('administrador') &&
+    !normalizedRole.includes('administrador top')
+  ) {
     aliases.add('administrador');
   }
 
   if (normalizedRole.includes('aseguramiento') || normalizedRole.includes('calidad')) {
     aliases.add('aseguramiento de calidad');
     aliases.add('calidad');
+  }
+
+  if (normalizedRole.includes('propietario') || normalizedRole.includes('gerencia')) {
+    aliases.add('propietario / gerencia');
+  }
+
+  if (normalizedRole.includes('gerente general')) {
+    aliases.add('gerente general');
   }
 
   if (normalizedRole.includes('tecnico') || normalizedRole.includes('tecnico')) {

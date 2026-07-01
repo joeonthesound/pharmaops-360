@@ -36,6 +36,10 @@ function normalizeRole(role: string | null | undefined) {
     supervisor: 'Supervisor',
     temporal: 'Temporal',
     'propietario / gerencia': 'Propietario / Gerencia',
+    'propietario/gerencia': 'Propietario / Gerencia',
+    'propietario gerencia': 'Propietario / Gerencia',
+    'gerente general': 'Gerente General',
+    'gerencia general': 'Gerente General',
   };
 
   return roleAliases[normalizedRole.toLowerCase()] ?? normalizedRole;
