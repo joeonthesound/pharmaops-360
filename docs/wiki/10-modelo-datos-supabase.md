@@ -154,3 +154,4 @@ evidencias-mantenimiento
 
 - [Crear Ordenes y Plantillas Dinamicas](./06-crear-ordenes-plantillas.md)
 - [Firma Electronica, Desvios y Auditoria](./07-firma-electronica-desvios-auditoria.md)
+- [Supabase: Definicion y Replicacion de Base de Datos](./12-supabase-replicacion-db.md)

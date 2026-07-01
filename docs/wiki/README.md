@@ -16,6 +16,7 @@ Este directorio documenta de forma modular el estado funcional, tecnico y GxP de
 - [09 - Usuarios y Roles](./09-usuarios-roles.md)
 - [10 - Modelo de Datos Supabase](./10-modelo-datos-supabase.md)
 - [11 - Runbooks de Validacion](./11-runbooks-validacion.md)
+- [12 - Supabase: Definicion y Replicacion de Base de Datos](./12-supabase-replicacion-db.md)
 
 ## Convenciones
 

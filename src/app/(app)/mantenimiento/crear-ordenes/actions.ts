@@ -148,12 +148,34 @@ type UsuarioRolRow = {
   can_create_assets: boolean | null;
 };
 
+type SupabaseMutationError = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+} | null;
+
+const HVAC_TEMPLATE_CODE = 'TMP-HVAC-PM';
+
 function normalizeText(value: string | null | undefined) {
   return String(value ?? '').normalize('NFC').trim();
 }
 
 function isHvacAssetType(assetType: string) {
   return normalizeText(assetType).toLowerCase() === 'sistemas hvac';
+}
+
+function sanitizeSupabaseError(error: SupabaseMutationError) {
+  if (!error) {
+    return null;
+  }
+
+  return {
+    code: error.code ?? null,
+    message: error.message ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+  };
 }
 
 function buildRecordCode(assetCode: string) {
@@ -163,6 +185,14 @@ function buildRecordCode(assetCode: string) {
     .slice(0, 14);
 
   return `WO-${assetCode}-${timestamp}`;
+}
+
+function buildTemplateCode(assetType: string) {
+  if (isHvacAssetType(assetType)) {
+    return HVAC_TEMPLATE_CODE;
+  }
+
+  return `TPL-${assetType.toUpperCase().replace(/[^A-Z0-9]+/g, '-')}`;
 }
 
 async function canCreateOrders() {
@@ -228,6 +258,41 @@ function normalizeTemplateField(row: Record<string, unknown>): MaintenanceTempla
   };
 }
 
+async function getHistoricalHvacTemplateFields() {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('formularios_campos')
+    .select('*')
+    .eq('template_code', HVAC_TEMPLATE_CODE)
+    .order('section_order', { ascending: true })
+    .order('field_order', { ascending: true });
+
+  if (error) {
+    console.error('[CREAR ORDENES] Error cargando plantilla historica HVAC', {
+      templateCode: HVAC_TEMPLATE_CODE,
+      code: error.code,
+      message: error.message,
+    });
+
+    return [];
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .map((row) =>
+      normalizeTemplateField({
+        ...row,
+        asset_type: 'Sistemas HVAC',
+      }),
+    )
+    .sort((left, right) => {
+      if (left.section_order !== right.section_order) {
+        return left.section_order - right.section_order;
+      }
+
+      return left.field_order - right.field_order;
+    });
+}
+
 export async function getTemplateFieldsForAssetType(assetType: string) {
   const normalizedAssetType = normalizeText(assetType);
 
@@ -261,11 +326,37 @@ export async function getTemplateFieldsForAssetType(assetType: string) {
       return left.field_order - right.field_order;
     });
 
-  if (fields.length === 0 && isHvacAssetType(normalizedAssetType)) {
+  if (fields.length > 0) {
+    return fields;
+  }
+
+  if (isHvacAssetType(normalizedAssetType)) {
+    const historicalFields = await getHistoricalHvacTemplateFields();
+
+    if (historicalFields.length > 0) {
+      return historicalFields;
+    }
+
     return HVAC_BASELINE_TEMPLATE_FIELDS;
   }
 
   return fields;
+}
+
+function buildInitialLayout(templateFields: MaintenanceTemplateField[]) {
+  return templateFields.map((field) => ({
+    field_id: field.id > 0 ? field.id : null,
+    field_key: field.field_key,
+    field_label: field.field_label,
+    field_type: field.field_type,
+    section_name: field.section_name,
+    required: field.required,
+    unit: field.unit,
+    value: null,
+    value_text: null,
+    value_numeric: null,
+    is_out_of_range: false,
+  }));
 }
 
 export async function generateMaintenanceOrder(
@@ -324,44 +415,93 @@ export async function generateMaintenanceOrder(
   }
 
   const assetCode = normalizeText(asset.asset_code);
-  const initialLayout = templateFields.map((field) => ({
-    field_id: field.id,
+  const templateCode = buildTemplateCode(assetType);
+  const initialLayout = buildInitialLayout(templateFields);
+  const fieldResponsesPayload = initialLayout.map((field) => ({
+    field_id: field.field_id,
     field_key: field.field_key,
-    field_label: field.field_label,
-    field_type: field.field_type,
-    section_name: field.section_name,
-    required: field.required,
-    unit: field.unit,
-    value: null,
+    value_text: null,
+    value_numeric: null,
+    is_out_of_range: false,
   }));
   const now = new Date().toISOString();
+
+  if (!assetCode) {
+    return {
+      ok: false,
+      message: 'El activo seleccionado no tiene codigo operativo valido.',
+      debug: {
+        stage: 'asset_code_validation',
+        assetUuid,
+      },
+    };
+  }
+
+  console.log('[CREAR ORDENES] Inicializando orden regulada', {
+    assetUuid,
+    assetCode,
+    assetType,
+    templateCode,
+    fields: templateFields.length,
+    status: 'PENDING_TECHNICIAN',
+  });
 
   const { data: recordData, error: recordError } = await supabase
     .from('mantenimientos_registros')
     .insert({
       record_code: buildRecordCode(assetCode),
       asset_code: assetCode,
-      template_code: `TPL-${assetType.toUpperCase().replace(/[^A-Z0-9]+/g, '-')}`,
-      assigned_technician: null,
+      template_code: templateCode,
+      assigned_technician: access.userEmail,
       status: 'PENDING_TECHNICIAN',
       executed_at: now,
       notes: JSON.stringify({
         asset_uuid_origen: assetUuid,
         asset_type: assetType,
+        template_code: templateCode,
         captured_at: now,
         progress_step: 1,
         initial_layout: initialLayout,
+        field_responses_payload: fieldResponsesPayload,
         generated_by: access.userEmail,
+        gxp_initialization: {
+          phase: 'Tecnico - Confeccion',
+          status: 'PENDING_TECHNICIAN',
+          source:
+            templateFields.some((field) => field.id < 0)
+              ? 'hvac_static_baseline_fallback'
+              : 'database_template',
+        },
       }),
     })
     .select('uuid')
     .single();
 
   if (recordError || !recordData) {
+    console.error('[CREAR ORDENES] Error insertando orden de mantenimiento', {
+      assetUuid,
+      assetCode,
+      assetType,
+      templateCode,
+      fields: templateFields.length,
+      error: sanitizeSupabaseError(recordError),
+    });
+
     return {
       ok: false,
       message: 'No fue posible generar la orden de mantenimiento.',
-      debug: recordError,
+      debug: {
+        stage: 'mantenimientos_registros_insert',
+        supabase_error: sanitizeSupabaseError(recordError),
+        attemptedPayload: {
+          asset_code: assetCode,
+          template_code: templateCode,
+          assigned_technician: access.userEmail,
+          status: 'PENDING_TECHNICIAN',
+          executed_at: now,
+          initial_layout_count: initialLayout.length,
+        },
+      },
     };
   }
 
