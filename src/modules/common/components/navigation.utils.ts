@@ -14,8 +14,11 @@ function getRoleAliases(role: string) {
   const normalizedRole = normalizeRole(role);
   const aliases = new Set([normalizedRole]);
 
-  if (normalizedRole.includes('superadmin') || normalizedRole.includes('administrador')) {
+  if (normalizedRole.includes('superadmin')) {
     aliases.add('superadmin');
+  }
+
+  if (normalizedRole.includes('administrador')) {
     aliases.add('administrador');
   }
 

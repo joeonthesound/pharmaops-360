@@ -77,6 +77,12 @@ export const NAVIGATION_TREE: NavigationNode[] = [
           },
         ],
       },
+      {
+        title: 'Gestión de Activos',
+        href: '/activos/gestion?action=create',
+        icon: 'PlusCircle',
+        roles: ['Superadmin'],
+      },
     ],
   },
   {
