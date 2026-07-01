@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import { AlertTriangle, ClipboardList, Search } from 'lucide-react';
 import {
@@ -29,6 +30,7 @@ function groupFieldsBySection(fields: MaintenanceTemplateField[]) {
 }
 
 export function OrderCreationForm({ assets }: OrderCreationFormProps) {
+  const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAssetUuid, setSelectedAssetUuid] = useState('');
   const [templateFields, setTemplateFields] = useState<MaintenanceTemplateField[]>([]);
@@ -36,6 +38,7 @@ export function OrderCreationForm({ assets }: OrderCreationFormProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [createdRecordUuid, setCreatedRecordUuid] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const templateSaved = searchParams.get('template_saved') === '1';
 
   const selectedAsset = assets.find((asset) => asset.uuid === selectedAssetUuid) ?? null;
   const filteredAssets = useMemo(() => {
@@ -193,28 +196,45 @@ export function OrderCreationForm({ assets }: OrderCreationFormProps) {
           </div>
         ) : null}
 
+        {templateSaved ? (
+          <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-black text-emerald-800">
+            Plantilla guardada correctamente. Seleccione el activo nuevamente para refrescar el
+            preview.
+          </div>
+        ) : null}
+
         {!isLoadingTemplate && templateFields.length > 0 ? (
           <div className="mt-5 grid gap-4">
             {Object.entries(fieldsBySection).map(([sectionName, fields]) => (
-              <section className="rounded-lg border border-slate-200 bg-slate-50 p-3" key={sectionName}>
+              <section className="overflow-hidden rounded-lg border border-slate-200 bg-white" key={sectionName}>
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-black text-slate-950">{sectionName}</h3>
-                  <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-black uppercase text-slate-500">
+                  <h3 className="px-3 py-2 text-sm font-black text-slate-950">{sectionName}</h3>
+                  <span className="mr-3 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase text-slate-500">
                     {fields.length} campo(s)
                   </span>
                 </div>
-                <ul className="mt-3 grid gap-2">
-                  {fields.map((field) => (
-                    <li className="rounded-md bg-white px-3 py-2 text-xs" key={field.id}>
-                      <p className="font-black text-slate-900">{field.field_label}</p>
-                      <p className="mt-1 font-semibold text-slate-500">
-                        {field.field_type}
-                        {field.unit ? ` / ${field.unit}` : ''}
-                        {field.required ? ' / requerido' : ''}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
+                <table className="w-full border-t border-slate-100 text-left text-xs">
+                  <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Parametro</th>
+                      <th className="px-3 py-2">Tipo</th>
+                      <th className="px-3 py-2">Unidad</th>
+                      <th className="px-3 py-2">Requerido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fields.map((field) => (
+                      <tr className="border-t border-slate-100 odd:bg-white even:bg-slate-50/80" key={field.id}>
+                        <td className="px-3 py-2 font-black text-slate-900">{field.field_label}</td>
+                        <td className="px-3 py-2 font-semibold text-slate-600">{field.field_type}</td>
+                        <td className="px-3 py-2 font-semibold text-slate-600">{field.unit ?? 'N/A'}</td>
+                        <td className="px-3 py-2 font-semibold text-slate-600">
+                          {field.required ? 'Si' : 'No'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </section>
             ))}
           </div>

@@ -29,6 +29,113 @@ export type GenerateMaintenanceOrderResult = {
   debug?: unknown;
 };
 
+const HVAC_BASELINE_TEMPLATE_FIELDS: MaintenanceTemplateField[] = [
+  {
+    id: -101,
+    asset_type: 'Sistemas HVAC',
+    section_name: 'Verificacion Inicial',
+    field_key: 'estado_general_equipo',
+    field_label: 'Estado general del equipo',
+    field_type: 'OK_NOK',
+    required: true,
+    unit: 'N/A',
+    options: null,
+    section_order: 1,
+    field_order: 1,
+  },
+  {
+    id: -102,
+    asset_type: 'Sistemas HVAC',
+    section_name: 'Verificacion Inicial',
+    field_key: 'limpieza_area_trabajo',
+    field_label: 'Limpieza del area de trabajo',
+    field_type: 'OK_NOK',
+    required: true,
+    unit: 'N/A',
+    options: null,
+    section_order: 1,
+    field_order: 2,
+  },
+  {
+    id: -201,
+    asset_type: 'Sistemas HVAC',
+    section_name: 'Parametros Electricos',
+    field_key: 'voltaje_operacion',
+    field_label: 'Voltaje de operacion',
+    field_type: 'NUMERIC',
+    required: true,
+    unit: 'V',
+    options: null,
+    section_order: 2,
+    field_order: 1,
+  },
+  {
+    id: -202,
+    asset_type: 'Sistemas HVAC',
+    section_name: 'Parametros Electricos',
+    field_key: 'corriente_motor',
+    field_label: 'Corriente del motor',
+    field_type: 'NUMERIC',
+    required: true,
+    unit: 'A',
+    options: null,
+    section_order: 2,
+    field_order: 2,
+  },
+  {
+    id: -301,
+    asset_type: 'Sistemas HVAC',
+    section_name: 'Ciclo de Refrigeracion',
+    field_key: 'presion_succion',
+    field_label: 'Presion de succion',
+    field_type: 'NUMERIC',
+    required: true,
+    unit: 'PSI',
+    options: null,
+    section_order: 3,
+    field_order: 1,
+  },
+  {
+    id: -302,
+    asset_type: 'Sistemas HVAC',
+    section_name: 'Ciclo de Refrigeracion',
+    field_key: 'temperatura_descarga',
+    field_label: 'Temperatura de descarga',
+    field_type: 'NUMERIC',
+    required: true,
+    unit: 'C',
+    options: null,
+    section_order: 3,
+    field_order: 2,
+  },
+  {
+    id: -401,
+    asset_type: 'Sistemas HVAC',
+    section_name: 'Componentes Especiales',
+    field_key: 'estado_filtros_hepa',
+    field_label: 'Estado de filtros HEPA',
+    field_type: 'OK_NOK',
+    required: true,
+    unit: 'N/A',
+    options: null,
+    section_order: 4,
+    field_order: 1,
+  },
+  {
+    id: -402,
+    asset_type: 'Sistemas HVAC',
+    section_name: 'Componentes Especiales',
+    field_key: 'observaciones_tecnicas',
+    field_label: 'Observaciones tecnicas',
+    field_type: 'TEXT',
+    required: false,
+    unit: 'N/A',
+    options: null,
+    section_order: 4,
+    field_order: 2,
+  },
+];
+
 type AssetForOrder = {
   uuid: string;
   asset_code: string | null;
@@ -43,6 +150,10 @@ type UsuarioRolRow = {
 
 function normalizeText(value: string | null | undefined) {
   return String(value ?? '').normalize('NFC').trim();
+}
+
+function isHvacAssetType(assetType: string) {
+  return normalizeText(assetType).toLowerCase() === 'sistemas hvac';
 }
 
 function buildRecordCode(assetCode: string) {
@@ -91,13 +202,24 @@ function normalizeTemplateField(row: Record<string, unknown>): MaintenanceTempla
     id,
     asset_type: normalizeText(row.asset_type as string | null | undefined),
     section_name: normalizeText(
-      (row.section_name ?? row.section ?? 'Parametros de mantenimiento') as string,
+      (row.section_name ??
+        row.seccion_nombre ??
+        row.section ??
+        'Parametros de mantenimiento') as string,
     ),
-    field_key: normalizeText((row.field_key ?? `campo_${id}`) as string),
-    field_label: normalizeText((row.field_label ?? row.label ?? `Campo ${id}`) as string),
-    field_type: normalizeText((row.field_type ?? 'text') as string),
+    field_key: normalizeText(
+      (row.field_key ?? row.campo_key ?? row.campo_nombre ?? `campo_${id}`) as string,
+    )
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, ''),
+    field_label: normalizeText((row.field_label ?? row.campo_nombre ?? row.label ?? `Campo ${id}`) as string),
+    field_type: normalizeText((row.field_type ?? row.tipo_dato ?? 'TEXT') as string),
     required: Boolean(row.required),
-    unit: row.unit === null || row.unit === undefined ? null : normalizeText(row.unit as string),
+    unit:
+      row.unit === null && row.unidad_medida === null
+        ? null
+        : normalizeText((row.unit ?? row.unidad_medida ?? 'N/A') as string),
     options: row.options ?? null,
     section_order:
       typeof row.section_order === 'number' ? row.section_order : Number(row.section_order ?? 999),
@@ -117,9 +239,7 @@ export async function getTemplateFieldsForAssetType(assetType: string) {
   const { data, error } = await supabase
     .from('mantenimiento_plantillas_campos')
     .select('*')
-    .eq('asset_type', normalizedAssetType)
-    .order('section_order', { ascending: true })
-    .order('field_order', { ascending: true });
+    .eq('asset_type', normalizedAssetType);
 
   if (error) {
     console.error('[CREAR ORDENES] Error cargando plantilla dinamica', {
@@ -131,7 +251,21 @@ export async function getTemplateFieldsForAssetType(assetType: string) {
     return [];
   }
 
-  return ((data ?? []) as Array<Record<string, unknown>>).map(normalizeTemplateField);
+  const fields = ((data ?? []) as Array<Record<string, unknown>>)
+    .map(normalizeTemplateField)
+    .sort((left, right) => {
+      if (left.section_order !== right.section_order) {
+        return left.section_order - right.section_order;
+      }
+
+      return left.field_order - right.field_order;
+    });
+
+  if (fields.length === 0 && isHvacAssetType(normalizedAssetType)) {
+    return HVAC_BASELINE_TEMPLATE_FIELDS;
+  }
+
+  return fields;
 }
 
 export async function generateMaintenanceOrder(
