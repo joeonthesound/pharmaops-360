@@ -4,7 +4,9 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { X } from 'lucide-react';
 import {
+  rejectMaintenanceWithDeviationAction,
   signMaintenanceRecordAction,
+  type DirectedRejectionReturnStage,
   type MaintenanceSigningAction,
   type MaintenanceSigningRole,
 } from '@/modules/mantenimiento/actions';
@@ -13,6 +15,7 @@ type MaintenanceStatus =
   | 'draft'
   | 'pending_supervisor'
   | 'pending_quality'
+  | 'pending_management'
   | 'approved'
   | 'rejected';
 
@@ -29,6 +32,39 @@ type SignatureReviewCardProps = {
 };
 
 type SignatureIntent = MaintenanceSigningAction | null;
+type ReturnStageOption = {
+  label: string;
+  value: DirectedRejectionReturnStage;
+};
+
+function resolveReturnStageOptions(status: MaintenanceStatus): ReturnStageOption[] {
+  const tecnicoOption = {
+    label: 'Retornar a Tecnico para correccion en Planta',
+    value: 'DRAFT' as const,
+  };
+  const supervisorOption = {
+    label: 'Retornar a Supervisor (Reevaluacion de Criterio)',
+    value: 'PENDING_SUPERVISOR' as const,
+  };
+  const calidadOption = {
+    label: 'Retornar a Calidad (Revision documental GxP)',
+    value: 'PENDING_QUALITY' as const,
+  };
+
+  if (status === 'pending_supervisor') {
+    return [tecnicoOption];
+  }
+
+  if (status === 'pending_quality') {
+    return [supervisorOption, tecnicoOption];
+  }
+
+  if (status === 'pending_management') {
+    return [calidadOption, supervisorOption, tecnicoOption];
+  }
+
+  return [tecnicoOption];
+}
 
 function formatDateTimeUtc(value: string | null | undefined) {
   if (!value) {
@@ -63,19 +99,24 @@ export function SignatureReviewCard({
   status,
 }: SignatureReviewCardProps) {
   const router = useRouter();
+  const returnStageOptions = resolveReturnStageOptions(status);
+  const defaultReturnStage = returnStageOptions[0]?.value ?? 'DRAFT';
   const [signatureIntent, setSignatureIntent] = useState<SignatureIntent>(null);
+  const [targetStatus, setTargetStatus] = useState<DirectedRejectionReturnStage>(defaultReturnStage);
   const [comments, setComments] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const activeStep = isActiveStep(status, signingRole);
   const isModalOpen = signatureIntent !== null;
-  const canSubmit = comments.trim().length >= 10 && !isPending;
+  const requiredCommentLength = signatureIntent === 'reject' ? 15 : 10;
+  const canSubmit = comments.trim().length >= requiredCommentLength && !isPending;
   const reviewLabel = signingRole === 'supervisor' ? 'Supervisor' : 'Calidad';
   const isAdministrativeConsultation =
     signingRole === 'supervisor' && currentUserRole.trim().toLowerCase() === 'administrativo';
 
   function openSignatureModal(action: MaintenanceSigningAction) {
     setSignatureIntent(action);
+    setTargetStatus(defaultReturnStage);
     setComments('');
     setErrorMessage(null);
   }
@@ -97,6 +138,43 @@ export function SignatureReviewCard({
 
     const validationComments = comments.trim();
 
+    if (signatureIntent === 'reject') {
+      if (validationComments.length < 15) {
+        setErrorMessage('La descripcion del desvio requiere al menos 15 caracteres.');
+        return;
+      }
+
+      setErrorMessage(null);
+
+      startTransition(async () => {
+        const selectedReturnStage = returnStageOptions.find(
+          (option) => option.value === targetStatus,
+        );
+        const result = await rejectMaintenanceWithDeviationAction({
+          recordUuid,
+          returnStage: targetStatus,
+          returnStageLabel: selectedReturnStage?.label ?? targetStatus,
+          deviationDescription: validationComments,
+          clientMetadata: {
+            deviceTimestamp: new Date().toISOString(),
+            clientIp: 'client-ip-pending-server-capture',
+            userAgent: navigator.userAgent,
+          },
+        });
+
+        if (!result.ok) {
+          setErrorMessage(result.message);
+          return;
+        }
+
+        setSignatureIntent(null);
+        setComments('');
+        router.refresh();
+      });
+
+      return;
+    }
+
     if (validationComments.length < 10) {
       setErrorMessage('Los comentarios de validacion GxP requieren al menos 10 caracteres.');
       return;
@@ -116,7 +194,7 @@ export function SignatureReviewCard({
         signingRole,
         action: signatureIntent,
         validationComments,
-        rejectionComments: signatureIntent === 'reject' ? validationComments : undefined,
+        rejectionComments: undefined,
         clientMetadata,
       });
 
@@ -221,11 +299,45 @@ export function SignatureReviewCard({
             </div>
 
             <label
-              className="mt-5 block text-sm font-bold text-slate-900"
+              className={signatureIntent === 'reject' ? 'hidden' : 'mt-5 block text-sm font-bold text-slate-900'}
               htmlFor={`${signingRole}-validation-comments`}
             >
               Comentarios de Validación GxP
             </label>
+            {signatureIntent === 'reject' ? (
+              <div className="mt-5">
+                <label
+                  className="block text-sm font-bold text-slate-900"
+                  htmlFor={`${signingRole}-return-stage`}
+                >
+                  Return Stage Selector
+                </label>
+                <select
+                  className="mt-2 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-slate-700 focus:ring-2 focus:ring-slate-100"
+                  id={`${signingRole}-return-stage`}
+                  onChange={(event) =>
+                    setTargetStatus(event.target.value as DirectedRejectionReturnStage)
+                  }
+                  value={targetStatus}
+                >
+                  {returnStageOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
+            {signatureIntent === 'reject' ? (
+              <label
+                className="mt-5 block text-sm font-bold text-slate-900"
+                htmlFor={`${signingRole}-validation-comments`}
+              >
+                Audit Trail Reason
+              </label>
+            ) : null}
+
             <textarea
               className="mt-2 min-h-32 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-950 outline-none transition focus:border-slate-700 focus:ring-2 focus:ring-slate-100"
               id={`${signingRole}-validation-comments`}
@@ -233,12 +345,18 @@ export function SignatureReviewCard({
                 setComments(event.target.value);
                 setErrorMessage(null);
               }}
-              placeholder="Documente la base tecnica y regulatoria de esta decision."
+              placeholder={
+                signatureIntent === 'reject'
+                  ? 'Describa el incumplimiento tecnico detectado y la correccion requerida.'
+                  : 'Documente la base tecnica y regulatoria de esta decision.'
+              }
               value={comments}
             />
             <div className="mt-2 flex items-center justify-between gap-3 text-xs font-semibold text-slate-500">
-              <span>Minimo requerido: 10 caracteres</span>
-              <span>{comments.trim().length}/10</span>
+              <span>Minimo requerido: {requiredCommentLength} caracteres</span>
+              <span>
+                {comments.trim().length}/{requiredCommentLength}
+              </span>
             </div>
 
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">

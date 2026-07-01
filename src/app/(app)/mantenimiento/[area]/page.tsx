@@ -65,6 +65,7 @@ type MaintenanceStatus =
   | 'draft'
   | 'pending_supervisor'
   | 'pending_quality'
+  | 'pending_management'
   | 'approved'
   | 'rejected';
 
@@ -241,10 +242,13 @@ function normalizeMaintenanceStatus(status: string | null | undefined): Maintena
     normalizedStatus === 'pendiente_supervisor' ||
     normalizedStatus === 'pending_quality' ||
     normalizedStatus === 'pendiente_calidad' ||
+    normalizedStatus === 'pending_management' ||
+    normalizedStatus === 'pendiente_gerencia' ||
     normalizedStatus === 'approved' ||
     normalizedStatus === 'aprobado' ||
     normalizedStatus === 'rejected' ||
-    normalizedStatus === 'rechazado'
+    normalizedStatus === 'rechazado' ||
+    normalizedStatus === 'rechazado_tecnico'
   ) {
     if (normalizedStatus === 'borrador') {
       return 'draft';
@@ -258,11 +262,15 @@ function normalizeMaintenanceStatus(status: string | null | undefined): Maintena
       return 'pending_quality';
     }
 
+    if (normalizedStatus === 'pendiente_gerencia') {
+      return 'pending_management';
+    }
+
     if (normalizedStatus === 'aprobado') {
       return 'approved';
     }
 
-    if (normalizedStatus === 'rechazado') {
+    if (normalizedStatus === 'rechazado' || normalizedStatus === 'rechazado_tecnico') {
       return 'rejected';
     }
 
@@ -301,6 +309,98 @@ function canRenderSupervisorSignature(usuario: UsuarioPermisos | null, recordSta
       ['supervisor', 'administrativo', 'superadmin'].includes(normalizedRole)) ||
     usuario?.can_review === true ||
     isSupervisorOrHigherRole(usuario?.role)
+  );
+}
+
+type TimelineStageState = 'completed' | 'active' | 'locked';
+
+type TimelineStage = {
+  label: string;
+  detail: string;
+  state: TimelineStageState;
+};
+
+function buildApprovalTimeline(status: MaintenanceStatus): TimelineStage[] {
+  const stageIndexByStatus: Record<MaintenanceStatus, number> = {
+    draft: 0,
+    rejected: 0,
+    pending_supervisor: 1,
+    pending_quality: 2,
+    pending_management: 3,
+    approved: 3,
+  };
+  const activeIndex = stageIndexByStatus[status] ?? 0;
+
+  return [
+    {
+      label: 'Tecnico',
+      detail: 'Confeccion',
+      state: activeIndex > 0 ? 'completed' : activeIndex === 0 ? 'active' : 'locked',
+    },
+    {
+      label: 'Supervisor',
+      detail: 'Revision',
+      state: activeIndex > 1 ? 'completed' : activeIndex === 1 ? 'active' : 'locked',
+    },
+    {
+      label: 'Calidad',
+      detail: 'Liberacion GxP',
+      state: activeIndex > 2 ? 'completed' : activeIndex === 2 ? 'active' : 'locked',
+    },
+    {
+      label: 'Gerencia',
+      detail: 'Cierre de Acta',
+      state: activeIndex >= 3 ? 'active' : 'locked',
+    },
+  ];
+}
+
+function resolveTimelineNodeClass(state: TimelineStageState) {
+  if (state === 'completed') {
+    return 'border-emerald-500 bg-emerald-600 text-white shadow-sm';
+  }
+
+  if (state === 'active') {
+    return 'border-amber-400 bg-amber-100 text-amber-900 shadow-sm ring-4 ring-amber-100';
+  }
+
+  return 'border-slate-200 bg-slate-100 text-slate-400';
+}
+
+function resolveTimelineLineClass(leftState: TimelineStageState) {
+  return leftState === 'completed' ? 'bg-emerald-400' : 'bg-slate-200';
+}
+
+function ApprovalTimelineGraphic({ status }: { status: MaintenanceStatus }) {
+  const stages = buildApprovalTimeline(status);
+
+  return (
+    <section className="rounded border border-slate-200 bg-white p-3 shadow-sm print:border-slate-300 print:shadow-none">
+      <div className="flex items-center justify-between gap-2">
+        {stages.map((stage, index) => (
+          <div className="flex flex-1 items-center" key={stage.label}>
+            <div className="flex min-w-0 flex-col items-center text-center">
+              <span
+                className={`flex h-9 w-9 items-center justify-center rounded-full border-2 text-xs font-black transition ${resolveTimelineNodeClass(stage.state)} ${
+                  stage.state === 'active' ? 'animate-pulse' : ''
+                }`}
+              >
+                {stage.state === 'completed' ? '✓' : index + 1}
+              </span>
+              <span className="mt-2 text-[11px] font-black uppercase tracking-wide text-slate-900">
+                {stage.label}
+              </span>
+              <span className="text-[10px] font-semibold text-slate-500">{stage.detail}</span>
+            </div>
+            {index < stages.length - 1 ? (
+              <div
+                className={`mx-2 h-0.5 flex-1 rounded-full ${resolveTimelineLineClass(stage.state)}`}
+              />
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1409,7 +1509,11 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
           </span>
         </section>
 
-        <section className="grid flex-1 grid-cols-12 gap-4 p-4 overflow-hidden h-[calc(100vh-7rem)] print:hidden">
+        <div className="px-4 pt-4 print:hidden">
+          <ApprovalTimelineGraphic status={normalizedStatus} />
+        </div>
+
+        <section className="grid flex-1 grid-cols-12 gap-4 p-4 overflow-hidden h-[calc(100vh-10rem)] print:hidden">
           <div className="col-span-12 flex min-h-0 flex-col gap-3 overflow-hidden lg:col-span-8">
             <section className="grid shrink-0 gap-2 rounded border border-slate-200 bg-white p-3 text-xs md:grid-cols-3">
               <div>
@@ -1640,6 +1744,10 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
             </div>
           </div>
         </header>
+
+        <div className="print:hidden">
+          <ApprovalTimelineGraphic status={normalizedStatus} />
+        </div>
 
         {camposLookupError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">

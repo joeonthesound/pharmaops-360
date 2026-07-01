@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 
 export type MaintenanceSigningRole = 'supervisor' | 'quality';
 export type MaintenanceSigningAction = 'approve' | 'reject';
+export type DirectedRejectionReturnStage = 'DRAFT' | 'PENDING_SUPERVISOR' | 'PENDING_QUALITY';
 
 export type SignMaintenanceRecordInput = {
   recordUuid: string;
@@ -32,10 +33,23 @@ export type SignMaintenanceRecordResult = {
   };
 };
 
+export type DirectedRejectionInput = {
+  recordUuid: string;
+  returnStage: DirectedRejectionReturnStage;
+  returnStageLabel: string;
+  deviationDescription: string;
+  clientMetadata?: {
+    deviceTimestamp: string;
+    clientIp: string;
+    userAgent: string;
+  };
+};
+
 type MaintenanceRecordStatus =
   | 'draft'
   | 'pending_supervisor'
   | 'pending_quality'
+  | 'pending_management'
   | 'approved'
   | 'rejected';
 
@@ -56,6 +70,17 @@ type ClientSignatureMetadata = {
 type MantenimientoRegistroFirma = {
   uuid: string;
   status: MaintenanceRecordStatus | string | null;
+};
+
+type DirectedRejectionResult = {
+  ok: boolean;
+  message: string;
+  nextStatus?: DirectedRejectionReturnStage;
+  debug?: {
+    stage: string;
+    code?: string;
+    details?: unknown;
+  };
 };
 
 type AuditInsertResult = {
@@ -104,10 +129,13 @@ function normalizeMaintenanceRecordStatus(
     normalizedStatus === 'pendiente_supervisor' ||
     normalizedStatus === 'pending_quality' ||
     normalizedStatus === 'pendiente_calidad' ||
+    normalizedStatus === 'pending_management' ||
+    normalizedStatus === 'pendiente_gerencia' ||
     normalizedStatus === 'approved' ||
     normalizedStatus === 'aprobado' ||
     normalizedStatus === 'rejected' ||
-    normalizedStatus === 'rechazado'
+    normalizedStatus === 'rechazado' ||
+    normalizedStatus === 'rechazado_tecnico'
   ) {
     if (normalizedStatus === 'borrador') {
       return 'draft';
@@ -121,11 +149,15 @@ function normalizeMaintenanceRecordStatus(
       return 'pending_quality';
     }
 
+    if (normalizedStatus === 'pendiente_gerencia') {
+      return 'pending_management';
+    }
+
     if (normalizedStatus === 'aprobado') {
       return 'approved';
     }
 
-    if (normalizedStatus === 'rechazado') {
+    if (normalizedStatus === 'rechazado' || normalizedStatus === 'rechazado_tecnico') {
       return 'rejected';
     }
 
@@ -154,6 +186,40 @@ function isSupervisorOrHigherRole(role: string | null | undefined) {
     normalizedRole === 'propietario / gerencia' ||
     normalizedRole === 'gerente general'
   );
+}
+
+function sanitizeDirectedRejectionInput(input: DirectedRejectionInput) {
+  return {
+    recordUuid: String(input.recordUuid ?? '').trim(),
+    returnStage: input.returnStage,
+    returnStageLabel: String(input.returnStageLabel ?? '').trim(),
+    deviationDescription: String(input.deviationDescription ?? '').trim(),
+    clientMetadata: {
+      deviceTimestamp: String(input.clientMetadata?.deviceTimestamp ?? '').trim(),
+      clientIp: String(input.clientMetadata?.clientIp ?? 'client-ip-pending-server-capture').trim(),
+      userAgent: String(input.clientMetadata?.userAgent ?? '').trim(),
+    },
+  };
+}
+
+function resolveAllowedReturnStages(
+  status: MaintenanceRecordStatus | string | null,
+): DirectedRejectionReturnStage[] {
+  const normalizedStatus = normalizeMaintenanceRecordStatus(status);
+
+  if (normalizedStatus === 'pending_supervisor') {
+    return ['DRAFT'];
+  }
+
+  if (normalizedStatus === 'pending_quality') {
+    return ['PENDING_SUPERVISOR', 'DRAFT'];
+  }
+
+  if (normalizedStatus === 'pending_management') {
+    return ['PENDING_QUALITY', 'PENDING_SUPERVISOR', 'DRAFT'];
+  }
+
+  return [];
 }
 
 function canSignCurrentStep(
@@ -582,5 +648,229 @@ export async function signMaintenanceRecordAction(
         : 'Firma electronica aplicada correctamente.',
     recordUuid,
     nextStatus,
+  };
+}
+
+export async function rejectMaintenanceWithDeviationAction(
+  input: DirectedRejectionInput,
+): Promise<DirectedRejectionResult> {
+  await cookies();
+
+  const { recordUuid, returnStage, returnStageLabel, deviationDescription, clientMetadata } =
+    sanitizeDirectedRejectionInput(input);
+
+  if (!UUID_PATTERN.test(recordUuid)) {
+    return {
+      ok: false,
+      message: 'UUID de registro de mantenimiento invalido.',
+      debug: {
+        stage: 'input_validation',
+        code: 'invalid_record_uuid',
+      },
+    };
+  }
+
+  if (!['DRAFT', 'PENDING_SUPERVISOR', 'PENDING_QUALITY'].includes(returnStage)) {
+    return {
+      ok: false,
+      message: 'Etapa de retorno no permitida para este flujo.',
+      debug: {
+        stage: 'input_validation',
+        code: 'invalid_return_stage',
+      },
+    };
+  }
+
+  if (!returnStageLabel) {
+    return {
+      ok: false,
+      message: 'La etiqueta de destino del rechazo es obligatoria.',
+      debug: {
+        stage: 'input_validation',
+        code: 'missing_return_stage_label',
+      },
+    };
+  }
+
+  if (deviationDescription.length < 15) {
+    return {
+      ok: false,
+      message: 'La descripcion del desvio requiere al menos 15 caracteres.',
+      debug: {
+        stage: 'input_validation',
+        code: 'missing_deviation_description',
+      },
+    };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error: sessionError,
+  } = await supabase.auth.getUser();
+  const supervisorEmail = user?.email?.trim().toLowerCase() ?? null;
+
+  if (sessionError || !user?.id || !supervisorEmail) {
+    return {
+      ok: false,
+      message: 'Sesion invalida o expirada. Inicie sesion nuevamente.',
+      debug: {
+        stage: 'session_validation',
+        code: sessionError?.code,
+      },
+    };
+  }
+
+  const { data: usuario, error: usuarioError } = await supabase
+    .from('usuarios_roles')
+    .select('user_email, active, role, can_review, can_approve')
+    .eq('user_email', supervisorEmail)
+    .eq('active', true)
+    .maybeSingle();
+
+  if (usuarioError || !usuario) {
+    return {
+      ok: false,
+      message: 'Usuario sin rol activo autorizado para rechazo con desvio.',
+      debug: {
+        stage: 'rbac_lookup',
+        code: usuarioError?.code,
+      },
+    };
+  }
+
+  const permisos = usuario as UsuarioRolPermisos;
+
+  if (!canReviewAsSupervisorOrHigher(permisos) || isAdministrativeConsultationRole(permisos.role)) {
+    return {
+      ok: false,
+      message: 'Usuario sin perfil Supervisor o superior para rechazo con desvio.',
+      debug: {
+        stage: 'rbac_validation',
+        code: 'missing_supervisor_or_higher_profile',
+        details: { supervisorEmail, role: permisos.role },
+      },
+    };
+  }
+
+  const { data: record, error: recordError } = await supabase
+    .from('mantenimientos_registros')
+    .select('uuid, status')
+    .eq('uuid', recordUuid)
+    .maybeSingle();
+
+  if (recordError || !record) {
+    return {
+      ok: false,
+      message: 'No fue posible localizar la orden de mantenimiento.',
+      debug: {
+        stage: 'record_lookup',
+        code: recordError?.code,
+      },
+    };
+  }
+
+  const maintenanceRecord = record as MantenimientoRegistroFirma;
+  const normalizedStatus = normalizeMaintenanceRecordStatus(maintenanceRecord.status);
+
+  const allowedReturnStages = resolveAllowedReturnStages(maintenanceRecord.status);
+
+  if (!allowedReturnStages.includes(returnStage)) {
+    return {
+      ok: false,
+      message: 'La etapa seleccionada no es previa al estado actual del documento.',
+      debug: {
+        stage: 'workflow_validation',
+        code: 'invalid_return_stage_for_current_status',
+        details: {
+          currentStatus: maintenanceRecord.status,
+          normalizedStatus,
+          returnStage,
+          allowedReturnStages,
+        },
+      },
+    };
+  }
+
+  const timestamp = new Date().toISOString();
+  const updatePayload = {
+    status: returnStage,
+    rejection_comments: deviationDescription,
+    supervisor_signed_by: supervisorEmail,
+    supervisor_signed_at: timestamp,
+  };
+
+  const { error: updateError } = await supabase
+    .from('mantenimientos_registros')
+    .update(updatePayload)
+    .eq('uuid', recordUuid)
+    .eq('status', maintenanceRecord.status);
+
+  if (updateError) {
+    return {
+      ok: false,
+      message: 'No fue posible retornar el registro al flujo tecnico.',
+      debug: {
+        stage: 'mantenimientos_registros_update',
+        code: updateError.code,
+        details: updateError,
+      },
+    };
+  }
+
+  const auditPayload = {
+    usuario_email: supervisorEmail,
+    usuario_id: user.id,
+    timestamp,
+    accion: 'RECHAZAR_CON_DESVIO',
+    justificacion: deviationDescription,
+    payload_snapshot: {
+      entity: 'mantenimientos_registros',
+      record_uuid: recordUuid,
+      previous_status: maintenanceRecord.status,
+      next_status: returnStage,
+      return_stage: returnStage,
+      return_stage_label: returnStageLabel,
+      deviation_description: deviationDescription,
+      environment_metadata: clientMetadata,
+    },
+    entidad: 'mantenimientos_registros',
+    entidad_uuid: recordUuid,
+  };
+
+  const { error: auditError } = await supabase
+    .from('auditoria_log_cambios')
+    .insert(auditPayload);
+
+  if (auditError) {
+    await supabase
+      .from('mantenimientos_registros')
+      .update({
+        status: maintenanceRecord.status,
+        rejection_comments: null,
+        supervisor_signed_by: null,
+        supervisor_signed_at: null,
+      })
+      .eq('uuid', recordUuid);
+
+    return {
+      ok: false,
+      message: 'No fue posible registrar la pista de auditoria. La mutacion fue revertida.',
+      debug: {
+        stage: 'auditoria_log_cambios_insert',
+        code: auditError.code,
+        details: auditError,
+      },
+    };
+  }
+
+  revalidatePath(`/mantenimiento/${recordUuid}`);
+  revalidatePath(`/mantenimiento/${recordUuid}/aprobar`);
+  revalidatePath('/dashboard');
+
+  return {
+    ok: true,
+    message: 'Registro retornado con desvio auditado.',
+    nextStatus: returnStage,
   };
 }
