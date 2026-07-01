@@ -3,10 +3,12 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
+  Activity,
   AlertTriangle,
   ChevronDown,
   ClipboardCheck,
   History,
+  Layers,
   LayoutDashboard,
   LogOut,
   Package,
@@ -15,6 +17,7 @@ import {
   ShieldCheck,
   Send,
   Users,
+  Wind,
   Wrench,
 } from 'lucide-react';
 import {
@@ -35,9 +38,11 @@ const MAINTENANCE_ACTIVE_CLASS =
   'bg-[#C76E00] border-l-2 border-[#C76E00] text-blue-900 hover:bg-[#C76E00]';
 
 const iconMap = {
+  Activity,
   AlertTriangle,
   ClipboardCheck,
   History,
+  Layers,
   LayoutDashboard,
   LogOut,
   Package,
@@ -46,6 +51,7 @@ const iconMap = {
   ShieldCheck,
   Send,
   Users,
+  Wind,
   Wrench,
 };
 
@@ -61,12 +67,30 @@ function getHrefPath(href: string) {
   return href.split('?')[0] ?? href;
 }
 
+function resolveNavigationHref(href: string, currentPath: string) {
+  if (!href.includes('[uuid]')) {
+    return href;
+  }
+
+  const basePath = getHrefPath(href).replace('/[uuid]', '');
+
+  return currentPath.startsWith(basePath) ? currentPath : null;
+}
+
 function isMaintenanceNode(node: NavigationNode): boolean {
   return Boolean(
     node.title === 'Mantenimientos' ||
       node.title === 'HVAC' ||
       (node.href && getHrefPath(node.href).startsWith('/mantenimiento')) ||
       node.children?.some((child) => isMaintenanceNode(child)),
+  );
+}
+
+function isActivosNode(node: NavigationNode): boolean {
+  return Boolean(
+    node.title === 'Activos' ||
+      (node.href && getHrefPath(node.href).startsWith('/activos')) ||
+      node.children?.some((child) => isActivosNode(child)),
   );
 }
 
@@ -106,6 +130,15 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
       return currentPath.startsWith('/mantenimiento');
     }
 
+    if (hrefPath === '/activos') {
+      return currentPath.startsWith('/activos');
+    }
+
+    if (hrefPath.includes('[uuid]')) {
+      const basePath = hrefPath.replace('/[uuid]', '');
+      return currentPath.startsWith(basePath);
+    }
+
     return !node.href.includes('?') && currentPath === hrefPath;
   }
 
@@ -116,6 +149,18 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
 
     if (node.title === 'HVAC') {
       return currentPath.startsWith('/mantenimiento/hvac');
+    }
+
+    if (node.href && getHrefPath(node.href) === '/activos') {
+      return currentPath.startsWith('/activos');
+    }
+
+    if (node.href && getHrefPath(node.href) === '/activos/hvac') {
+      return currentPath.startsWith('/activos/hvac');
+    }
+
+    if (node.href && getHrefPath(node.href).includes('[uuid]')) {
+      return currentPath.startsWith(getHrefPath(node.href).replace('/[uuid]', ''));
     }
 
     return Boolean(node.href && currentPath === getHrefPath(node.href));
@@ -134,14 +179,19 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
     const isActive = isNodeActive(node);
     const isMaintenanceRoute = currentPath.startsWith('/mantenimiento');
     const isMaintenanceTreeNode = isMaintenanceRoute && isMaintenanceNode(node);
+    const isActivosRoute = currentPath.startsWith('/activos');
+    const isActivosTreeNode = isActivosRoute && isActivosNode(node);
     const isMaintenanceActive =
       isMaintenanceTreeNode && (isActive || isOpen || hasActiveChild || depth > 0);
-    const activeClass = isMaintenanceActive ? MAINTENANCE_ACTIVE_CLASS : theme.itemActive;
-    const activeTextClass = isMaintenanceActive ? 'text-blue-900' : theme.text;
-    const iconClass = isMaintenanceActive ? 'text-blue-900' : theme.mutedText;
+    const isActivosActive =
+      isActivosTreeNode && (isActive || isOpen || hasActiveChild || depth > 0);
+    const activeClass =
+      isMaintenanceActive || isActivosActive ? MAINTENANCE_ACTIVE_CLASS : theme.itemActive;
+    const activeTextClass = isMaintenanceActive || isActivosActive ? 'text-blue-900' : theme.text;
+    const iconClass = isMaintenanceActive || isActivosActive ? 'text-blue-900' : theme.mutedText;
     const paddingClass = depth === 0 ? 'px-3' : depth === 1 ? 'pl-4 pr-3' : 'pl-8 pr-3';
     const itemClass = `${paddingClass} flex min-h-11 w-full items-center justify-between rounded-md py-2 text-left text-sm font-semibold transition ${activeTextClass} ${
-      isActive || isMaintenanceActive ? activeClass : theme.item
+      isActive || isMaintenanceActive || isActivosActive ? activeClass : theme.item
     }`;
 
     if (hasChildren) {
@@ -189,8 +239,21 @@ export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
       return null;
     }
 
+    const resolvedHref = resolveNavigationHref(node.href, currentPath);
+
+    if (!resolvedHref) {
+      return (
+        <div className={`${itemClass} cursor-not-allowed opacity-60`} key={node.title}>
+          <span className="flex items-center gap-3">
+            <NavigationIcon className={iconClass} name={node.icon} />
+            {node.title}
+          </span>
+        </div>
+      );
+    }
+
     return (
-      <Link className={itemClass} href={node.href} key={node.title}>
+      <Link className={itemClass} href={resolvedHref} key={node.title}>
         <span className="flex items-center gap-3">
           <NavigationIcon className={iconClass} name={node.icon} />
           {node.title}

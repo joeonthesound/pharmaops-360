@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { supabase } from '@/shared/lib/supabase';
 
@@ -16,6 +16,7 @@ export interface FieldResponse {
 type PayloadFilaDB = {
   mantenimiento_id: number;
   campo_id: number;
+  field_key?: string | null;
   valor_numerico: number | null;
   valor_seleccion: string | null;
   valor_texto: string | null;
@@ -73,9 +74,16 @@ type ModalState = {
   debug?: unknown;
 };
 
+type PreviewFile = {
+  file: File;
+  url: string;
+};
+
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const EVIDENCE_BUCKET = 'mantenimiento';
+const EVIDENCE_BUCKET = 'evidencias-mantenimiento';
+const VIRTUAL_EVIDENCE_FIELD_ID = -1;
+const VIRTUAL_EVIDENCE_FIELD_KEY = 'evidencias_hvac';
 
 function normalizeFieldType(fieldType: string) {
   return fieldType.trim().toLowerCase();
@@ -234,6 +242,8 @@ export function ChecklistForm({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modal, setModal] = useState<ModalState | null>(null);
+  const [previewFiles, setPreviewFiles] = useState<PreviewFile[]>([]);
+  const evidenceInputRef = useRef<HTMLInputElement | null>(null);
   const isReadOnly = resolveIsReadOnly(maintenanceStatus);
   const isRejected = maintenanceStatus === 'rejected';
 
@@ -266,6 +276,12 @@ export function ChecklistForm({
   }, [campos, initialResponses]);
 
   const hasOutOfRange = responses.some((response) => response.is_out_of_range);
+
+  useEffect(() => {
+    return () => {
+      previewFiles.forEach((previewFile) => URL.revokeObjectURL(previewFile.url));
+    };
+  }, [previewFiles]);
 
   function updateResponse(fieldKey: string, patch: Partial<FieldResponse>) {
     setResponses((currentResponses) =>
@@ -322,6 +338,50 @@ export function ChecklistForm({
     });
   }
 
+  function syncEvidenceInputFiles(files: File[]) {
+    if (!evidenceInputRef.current) {
+      return;
+    }
+
+    const dataTransfer = new DataTransfer();
+    files.forEach((file) => dataTransfer.items.add(file));
+    evidenceInputRef.current.files = dataTransfer.files;
+  }
+
+  function handleEvidenceFileChange(files: FileList | null) {
+    setPreviewFiles((currentPreviewFiles) => {
+      currentPreviewFiles.forEach((previewFile) => URL.revokeObjectURL(previewFile.url));
+
+      const nextPreviewFiles = Array.from(files ?? [])
+        .filter((file) => file.size > 0)
+        .map((file) => ({
+          file,
+          url: URL.createObjectURL(file),
+        }));
+
+      syncEvidenceInputFiles(nextPreviewFiles.map((previewFile) => previewFile.file));
+
+      return nextPreviewFiles;
+    });
+  }
+
+  function handleRemoveEvidenceFile(indexToRemove: number) {
+    setPreviewFiles((currentPreviewFiles) => {
+      const removedPreviewFile = currentPreviewFiles[indexToRemove];
+      const nextPreviewFiles = currentPreviewFiles.filter(
+        (_, index) => index !== indexToRemove,
+      );
+
+      if (removedPreviewFile) {
+        URL.revokeObjectURL(removedPreviewFile.url);
+      }
+
+      syncEvidenceInputFiles(nextPreviewFiles.map((previewFile) => previewFile.file));
+
+      return nextPreviewFiles;
+    });
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -353,8 +413,11 @@ export function ChecklistForm({
       const camposById = new Map(campos.map((campo) => [campo.id, campo]));
       const evidenceFiles = formData.getAll('evidencias').filter(isEvidenceFile);
       const evidenceFields = campos.filter(
-        (campo) => resolveFieldTypeForStorage(campo.field_type) === 'evidence',
+        (campo) =>
+          resolveFieldTypeForStorage(campo.field_type) === 'evidence' ||
+          campo.evidence_required === true,
       );
+      const evidenceField = evidenceFields[0] ?? null;
       const formValues = responses.reduce<Record<string, string | number | boolean | null>>(
         (acc, response) => {
           acc[String(response.field_id)] =
@@ -363,29 +426,6 @@ export function ChecklistForm({
         },
         {},
       );
-
-      if (evidenceFiles.length > 0 && evidenceFields.length === 0) {
-        setModal({
-          status: 'error',
-          message:
-            'La plantilla no contiene un campo de evidencia para vincular las imagenes seleccionadas.',
-          debug: {
-            stage: 'client_evidence_field_missing',
-            selectedFiles: evidenceFiles.map((file) => ({
-              name: file.name,
-              size: file.size,
-              type: file.type,
-            })),
-            availableFields: campos.map((campo) => ({
-              id: campo.id,
-              field_key: campo.field_key,
-              field_type: campo.field_type,
-            })),
-          },
-        });
-        setIsSubmitting(false);
-        return;
-      }
 
       if (evidenceFiles.length > 0) {
         const evidenceOwnerId = (maintenanceRecordUuid || assetUuid).trim();
@@ -431,6 +471,7 @@ export function ChecklistForm({
             .getPublicUrl(storagePath).data.publicUrl;
 
           uploadedImages.push({
+            fieldKey: evidenceField?.field_key ?? VIRTUAL_EVIDENCE_FIELD_KEY,
             bucket: EVIDENCE_BUCKET,
             path: storagePath,
             publicUrl,
@@ -441,17 +482,24 @@ export function ChecklistForm({
           });
         }
 
-        formValues[String(evidenceFields[0].id)] = JSON.stringify(uploadedImages);
+        formValues[String(evidenceField?.id ?? VIRTUAL_EVIDENCE_FIELD_ID)] =
+          JSON.stringify(uploadedImages.map((image) => image.publicUrl));
       }
 
       const payloadParaDB: PayloadFilaDB[] = Object.entries(formValues).map(([campoId, valor]) => {
         const campoIdAsNumber = Number.parseInt(campoId, 10);
         const campo = camposById.get(campoIdAsNumber);
-        const fieldType = resolveFieldTypeForStorage(campo?.field_type ?? 'text');
+        const isVirtualEvidenceField = campoIdAsNumber === VIRTUAL_EVIDENCE_FIELD_ID;
+        const fieldType = isVirtualEvidenceField
+          ? 'evidence'
+          : resolveFieldTypeForStorage(campo?.field_type ?? 'text');
 
         return {
           mantenimiento_id: currentMantenimientoId,
           campo_id: campoIdAsNumber,
+          field_key:
+            campo?.field_key ??
+            (isVirtualEvidenceField ? VIRTUAL_EVIDENCE_FIELD_KEY : null),
           valor_numerico:
             fieldType === 'numeric' && typeof valor === 'number' ? Number(valor) : null,
           valor_seleccion:
@@ -468,6 +516,7 @@ export function ChecklistForm({
       if (maintenanceRecordUuid) {
         formData.set('maintenance_record_uuid', maintenanceRecordUuid.trim());
       }
+      formData.delete('evidencias');
       formData.set('payload_para_db', JSON.stringify(payloadParaDB));
       const result = await action(formData);
       const attemptedPayload = {
@@ -743,10 +792,36 @@ export function ChecklistForm({
             className="sr-only"
             multiple
             name="evidencias"
+            onChange={(event) => handleEvidenceFileChange(event.target.files)}
+            ref={evidenceInputRef}
             disabled={!!isReadOnly}
             type="file"
           />
         </label>
+        {previewFiles.length > 0 ? (
+          <div className="mt-3 flex gap-2 overflow-x-auto rounded-md border border-slate-100 bg-white p-2">
+            {previewFiles.map((previewFile, index) => (
+              <div
+                className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 shadow-sm"
+                key={`${previewFile.url}-${index}`}
+              >
+                <img
+                  alt={`Evidencia seleccionada ${index + 1}`}
+                  className="h-full w-full object-cover"
+                  src={previewFile.url}
+                />
+                <button
+                  aria-label={`Quitar evidencia ${index + 1}`}
+                  className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/70 bg-slate-950/80 text-[11px] font-black leading-none text-white shadow-sm transition hover:bg-red-700"
+                  onClick={() => handleRemoveEvidenceFile(index)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <p className="mt-2 text-xs leading-5 text-slate-600">
           Ruta preparada: evidencias-mantenimiento/{assetUuid}/
         </p>

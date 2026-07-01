@@ -2,7 +2,8 @@ export interface NavigationNode {
   title: string;
   href?: string;
   icon?: string;
-  rolesAllowed: string[];
+  roles?: string[];
+  rolesAllowed?: string[];
   children?: NavigationNode[];
 }
 

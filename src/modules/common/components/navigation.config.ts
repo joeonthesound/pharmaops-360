@@ -42,7 +42,43 @@ export const ROLE_SIDEBAR_THEME: Record<PharmaOpsRole, SidebarTheme> = {
 
 export const DEFAULT_SIDEBAR_THEME = ROLE_SIDEBAR_THEME.Administrativo;
 
+export const ALL_NAVIGATION_ROLES = [
+  'Superadmin',
+  'Aseguramiento de Calidad',
+  'Técnico',
+  'Administrador',
+  'Propietario / Gerencia',
+  'Calidad',
+  'Supervisor',
+  'TÃ©cnico',
+  'Administrativo',
+  'ProducciÃ³n',
+  'Temporal',
+];
+
 export const NAVIGATION_TREE: NavigationNode[] = [
+  {
+    title: 'Activos',
+    href: '/activos',
+    icon: 'Layers',
+    roles: ALL_NAVIGATION_ROLES,
+    children: [
+      {
+        title: 'Sistemas HVAC',
+        href: '/activos/hvac',
+        icon: 'Wind',
+        roles: ALL_NAVIGATION_ROLES,
+        children: [
+          {
+            title: 'Documento Único de Inspección',
+            href: '/activos/hvac/ver/[uuid]',
+            icon: 'Activity',
+            roles: ALL_NAVIGATION_ROLES,
+          },
+        ],
+      },
+    ],
+  },
   {
     title: 'Mantenimientos',
     href: '/mantenimiento',

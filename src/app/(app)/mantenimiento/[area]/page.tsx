@@ -52,6 +52,7 @@ type MantenimientoCabecera = {
 type PayloadFilaDB = {
   mantenimiento_id: number;
   campo_id: number;
+  field_key?: string | null;
   valor_numerico: number | null;
   valor_seleccion: string | null;
   valor_texto: string | null;
@@ -122,6 +123,7 @@ type RecordNotes = {
 
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const VIRTUAL_EVIDENCE_FIELD_KEY = 'evidencias_hvac';
 
 function groupBySection(campos: FormularioCampo[]) {
   return campos.reduce<Record<string, FormularioCampo[]>>((acc, campo) => {
@@ -165,6 +167,9 @@ function isPayloadFilaDB(value: unknown): value is PayloadFilaDB {
   return (
     typeof candidate.mantenimiento_id === 'number' &&
     typeof candidate.campo_id === 'number' &&
+    (candidate.field_key === undefined ||
+      candidate.field_key === null ||
+      typeof candidate.field_key === 'string') &&
     (candidate.valor_numerico === null || typeof candidate.valor_numerico === 'number') &&
     (candidate.valor_seleccion === null || typeof candidate.valor_seleccion === 'string') &&
     (candidate.valor_texto === null || typeof candidate.valor_texto === 'string') &&
@@ -380,6 +385,57 @@ async function insertChecklistAuditEvent({
   });
 
   return error;
+}
+
+async function resolveVirtualEvidenceCampoId(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+) {
+  const { data: existingField, error: lookupError } = await supabase
+    .from('formularios_campos')
+    .select('id')
+    .eq('template_code', 'TMP-HVAC-PM')
+    .eq('field_key', VIRTUAL_EVIDENCE_FIELD_KEY)
+    .maybeSingle();
+
+  if (lookupError) {
+    return {
+      id: null,
+      error: lookupError,
+    };
+  }
+
+  if (existingField && typeof existingField.id === 'number') {
+    return {
+      id: existingField.id,
+      error: null,
+    };
+  }
+
+  const { data: createdField, error: insertError } = await supabase
+    .from('formularios_campos')
+    .insert({
+      template_code: 'TMP-HVAC-PM',
+      field_key: VIRTUAL_EVIDENCE_FIELD_KEY,
+      section_name: 'Adjuntos y observaciones',
+      field_label: 'Evidencias HVAC',
+      field_type: 'evidence',
+      options: null,
+      minimum_value: null,
+      maximum_value: null,
+      help_text: 'Campo virtual auditado para evidencias multiples HVAC.',
+      evidence_required: true,
+      required: false,
+      unit: null,
+      section_order: 999,
+      field_order: 999,
+    })
+    .select('id')
+    .single();
+
+  return {
+    id: typeof createdField?.id === 'number' ? createdField.id : null,
+    error: insertError,
+  };
 }
 
 function isDraftStatus(status: string | null | undefined) {
@@ -659,14 +715,45 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
       };
     }
 
-    const respuestasEav = payloadParaDB.map((row) => ({
-      mantenimiento_id: cabeceraMantenimiento.id,
-      campo_id: Number(row.campo_id),
-      valor_numerico: row.valor_numerico,
-      valor_seleccion: row.valor_seleccion ? normalizeUtf8String(row.valor_seleccion) : null,
-      valor_texto: row.valor_texto ? normalizeUtf8String(row.valor_texto) : null,
-      valor_booleano: row.valor_booleano,
-    }));
+    let virtualEvidenceCampoId: number | null = null;
+    const respuestasEav = [];
+
+    for (const row of payloadParaDB) {
+      let campoId = Number(row.campo_id);
+
+      if (campoId <= 0 && row.field_key === VIRTUAL_EVIDENCE_FIELD_KEY) {
+        if (virtualEvidenceCampoId === null) {
+          const resolvedVirtualField = await resolveVirtualEvidenceCampoId(supabase);
+
+          if (resolvedVirtualField.error || resolvedVirtualField.id === null) {
+            return {
+              ok: false,
+              message: 'No fue posible preparar el campo virtual de evidencias HVAC.',
+              debug: {
+                stage: 'virtual_evidence_field_resolution',
+                asset_uuid: assetUuid,
+                cabecera_uuid: cabeceraMantenimiento.uuid,
+                virtual_field_key: VIRTUAL_EVIDENCE_FIELD_KEY,
+                supabase_error: sanitizeSupabaseError(resolvedVirtualField.error),
+              },
+            };
+          }
+
+          virtualEvidenceCampoId = resolvedVirtualField.id;
+        }
+
+        campoId = virtualEvidenceCampoId;
+      }
+
+      respuestasEav.push({
+        mantenimiento_id: cabeceraMantenimiento.id,
+        campo_id: campoId,
+        valor_numerico: row.valor_numerico,
+        valor_seleccion: row.valor_seleccion ? normalizeUtf8String(row.valor_seleccion) : null,
+        valor_texto: row.valor_texto ? normalizeUtf8String(row.valor_texto) : null,
+        valor_booleano: row.valor_booleano,
+      });
+    }
 
     if (respuestasEav.length > 0) {
       try {

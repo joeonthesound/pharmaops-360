@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Bell, Menu } from 'lucide-react';
+import { Bell, ChevronRight, Menu } from 'lucide-react';
 import { Sidebar } from './sidebar';
+import { supabase } from '@/shared/lib/supabase';
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -24,6 +26,117 @@ function isTechnicianRole(role: string) {
   const normalizedRole = role.toLowerCase();
 
   return normalizedRole.includes('tecnico') || normalizedRole.includes('técnico');
+}
+
+function getStaticBreadcrumbLabel(segment: string) {
+  const labels: Record<string, string> = {
+    activos: 'Activos',
+    hvac: 'HVAC',
+    ver: 'Ver Registro',
+    mantenimiento: 'Mantenimiento',
+    rui: 'RUI',
+    admin: 'Administración',
+    usuarios: 'Usuarios',
+    dashboard: 'Dashboard',
+  };
+
+  return labels[segment] ?? segment.replace(/-/g, ' ');
+}
+
+function isUuidLike(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{3,4}-[0-9a-f]{3,4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function DynamicBreadcrumbs({ pathname }: { pathname: string }) {
+  const [assetCode, setAssetCode] = useState<string | null>(null);
+  const [isLoadingAssetCode, setIsLoadingAssetCode] = useState(false);
+  const segments = useMemo(() => pathname.split('/').filter(Boolean), [pathname]);
+  const assetUuid =
+    segments[0] === 'activos' && segments[1] === 'hvac' && segments[2] === 'ver'
+      ? segments[3] ?? null
+      : null;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchAssetCode(uuid: string) {
+      setIsLoadingAssetCode(true);
+      setAssetCode(null);
+
+      const { data } = await supabase
+        .from('activos')
+        .select('asset_code')
+        .eq('uuid', uuid)
+        .maybeSingle();
+
+      if (isMounted) {
+        setAssetCode(
+          typeof data?.asset_code === 'string' && data.asset_code.trim()
+            ? data.asset_code
+            : null,
+        );
+        setIsLoadingAssetCode(false);
+      }
+    }
+
+    if (assetUuid && isUuidLike(assetUuid)) {
+      void fetchAssetCode(assetUuid);
+    } else {
+      setAssetCode(null);
+      setIsLoadingAssetCode(false);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [assetUuid]);
+
+  if (segments.length === 0) {
+    return null;
+  }
+
+  let hrefAccumulator = '';
+  const crumbs = segments.map((segment, index) => {
+    hrefAccumulator += `/${segment}`;
+    const isLast = index === segments.length - 1;
+    const isDynamicAssetLeaf = assetUuid === segment;
+
+    return {
+      href: hrefAccumulator,
+      isLast,
+      isDynamicAssetLeaf,
+      label: isDynamicAssetLeaf ? assetCode ?? '' : getStaticBreadcrumbLabel(segment),
+    };
+  });
+
+  return (
+    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-xs font-bold">
+      {crumbs.map((crumb, index) => (
+        <span className="flex min-w-0 items-center gap-1" key={crumb.href}>
+          {index > 0 ? (
+            <ChevronRight aria-hidden="true" className="shrink-0 text-slate-300" size={14} />
+          ) : null}
+
+          {crumb.isDynamicAssetLeaf && isLoadingAssetCode ? (
+            <span className="h-4 w-16 animate-pulse rounded bg-slate-200" />
+          ) : crumb.isLast ? (
+            <span className="max-w-[180px] truncate rounded-md bg-slate-100 px-2 py-1 text-slate-900">
+              {crumb.label || 'Registro'}
+            </span>
+          ) : (
+            <Link
+              className="max-w-[160px] truncate rounded-md px-2 py-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
+              href={crumb.href}
+            >
+              {crumb.label}
+            </Link>
+          )}
+        </span>
+      ))}
+    </nav>
+  );
 }
 
 export function AppShell({ children, currentRole, currentUserName }: AppShellProps) {
@@ -70,7 +183,9 @@ export function AppShell({ children, currentRole, currentUserName }: AppShellPro
               <Menu aria-hidden="true" size={20} />
             </button>
 
-            <div className="hidden min-w-0 flex-1 md:block" />
+            <div className="hidden min-w-0 flex-1 md:block">
+              <DynamicBreadcrumbs pathname={pathname} />
+            </div>
 
             <div className="min-w-0 flex-1 md:hidden">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
