@@ -71,6 +71,8 @@ export function SignatureReviewCard({
   const isModalOpen = signatureIntent !== null;
   const canSubmit = comments.trim().length >= 10 && !isPending;
   const reviewLabel = signingRole === 'supervisor' ? 'Supervisor' : 'Calidad';
+  const isAdministrativeConsultation =
+    signingRole === 'supervisor' && currentUserRole.trim().toLowerCase() === 'administrativo';
 
   function openSignatureModal(action: MaintenanceSigningAction) {
     setSignatureIntent(action);
@@ -181,6 +183,12 @@ export function SignatureReviewCard({
               {errorMessage}
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {activeStep && !canSign && isAdministrativeConsultation ? (
+        <div className="print:hidden mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+          Modo Consulta: Registro retenido en fase de Supervisión Operativa.
         </div>
       ) : null}
 

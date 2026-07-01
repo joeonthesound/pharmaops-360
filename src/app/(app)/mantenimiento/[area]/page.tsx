@@ -1099,9 +1099,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
     maintenanceRecord = (maintenanceRecordData ?? null) as MantenimientoRegistroResumen | null;
   }
 
-  const normalizedStatus = isMaintenanceStatus(maintenanceRecord?.status)
-    ? maintenanceRecord.status
-    : 'draft';
+  const normalizedStatus = normalizeMaintenanceStatus(maintenanceRecord?.status) ?? 'draft';
 
   const [
     { data: camposData, error: camposLookupError },
@@ -1143,6 +1141,26 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   const evidenceImageUrls = extractEvidenceImageUrls(orderedResponses, (path) => {
     return supabase.storage.from(EVIDENCE_BUCKET).getPublicUrl(path).data.publicUrl;
   });
+  const supervisorCanSign =
+    canRenderSupervisorSignature(usuario, maintenanceRecord?.status) &&
+    !isAdministrativeConsultationRole(usuario?.role);
+  const supervisorGateDebug = {
+    sessionEmail: userEmail || null,
+    usuarioRole: usuario?.role ?? null,
+    usuarioCanReview: usuario?.can_review ?? null,
+    rawRecordStatus: maintenanceRecord?.status ?? null,
+    normalizedStatus,
+    isReadOnlyDocument,
+    isSupervisorStep: normalizedStatus === 'pending_supervisor',
+    canRenderSupervisorSignature: canRenderSupervisorSignature(usuario, maintenanceRecord?.status),
+    isAdministrativeConsultation: isAdministrativeConsultationRole(usuario?.role),
+    supervisorCanSign,
+  };
+
+  if (process.env.NEXT_PUBLIC_SUPERADMIN_DEBUG === 'true') {
+    console.log('[RUI SUPERVISOR ACTION GATE]', supervisorGateDebug);
+  }
+
   const printMetadata = [
     ['Tipo de mantenimiento', 'Preventivo / Correctivo HVAC'],
     ['Fecha', formatDateTimeUtc(maintenanceRecord?.executed_at ?? notes.captured_at)],
@@ -1481,39 +1499,62 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
           </div>
 
           <aside className="col-span-12 flex min-h-0 flex-col gap-3 overflow-y-auto lg:col-span-4">
-            {signatureCards.map((signature) => (
-              <article
-                className="rounded border border-slate-200 bg-white p-4 shadow-sm"
-                key={signature.title}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">
-                    {signature.title}
-                  </h2>
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">
-                    Firma Electronica
-                  </span>
+            <article className="rounded border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">
+                  Tecnico
+                </h2>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">
+                  Firma Electronica
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 text-sm">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">User ID</p>
+                  <p className="break-all font-bold text-slate-900">
+                    {maintenanceRecord?.assigned_technician ?? 'No disponible'}
+                  </p>
                 </div>
-                <div className="mt-4 grid gap-3 text-sm">
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">User ID</p>
-                    <p className="break-all font-bold text-slate-900">{signature.user}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Timestamp UTC</p>
-                    <p className="font-bold text-slate-900">{signature.timestamp}</p>
-                  </div>
-                  <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                      GxP Legal Meaning
-                    </p>
-                    <p className="mt-1 text-xs font-semibold leading-5 text-slate-700">
-                      {signature.meaning}
-                    </p>
-                  </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Timestamp UTC</p>
+                  <p className="font-bold text-slate-900">
+                    {formatDateTimeUtc(maintenanceRecord?.executed_at ?? notes.captured_at)}
+                  </p>
                 </div>
-              </article>
-            ))}
+                <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    GxP Legal Meaning
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-slate-700">
+                    Confeccion del registro tecnico bajo accion afirmativa del operador.
+                  </p>
+                </div>
+              </div>
+            </article>
+
+            <SignatureReviewCard
+              canSign={supervisorCanSign}
+              currentUserRole={usuario?.role ?? 'Sin rol activo'}
+              rejectionComments={maintenanceRecord?.rejection_comments ?? null}
+              recordUuid={maintenanceRecord?.uuid ?? ''}
+              reviewerTitle="Supervisor"
+              signedAt={maintenanceRecord?.supervisor_signed_at ?? null}
+              signedBy={maintenanceRecord?.supervisor_signed_by ?? null}
+              signingRole="supervisor"
+              status={normalizedStatus}
+            />
+
+            <SignatureReviewCard
+              canSign={usuario?.can_approve === true}
+              currentUserRole={usuario?.role ?? 'Sin rol activo'}
+              rejectionComments={maintenanceRecord?.rejection_comments ?? null}
+              recordUuid={maintenanceRecord?.uuid ?? ''}
+              reviewerTitle="Calidad"
+              signedAt={maintenanceRecord?.quality_signed_at ?? null}
+              signedBy={maintenanceRecord?.quality_signed_by ?? null}
+              signingRole="quality"
+              status={normalizedStatus}
+            />
           </aside>
         </section>
       </main>
@@ -1816,7 +1857,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                 </article>
 
                 <SignatureReviewCard
-                  canSign={canRenderSupervisorSignature(usuario)}
+                  canSign={supervisorCanSign}
                   currentUserRole={usuario?.role ?? 'Sin rol activo'}
                   rejectionComments={maintenanceRecord?.rejection_comments ?? null}
                   recordUuid={maintenanceRecord?.uuid ?? ''}

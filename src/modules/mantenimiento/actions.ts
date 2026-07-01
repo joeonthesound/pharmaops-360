@@ -85,24 +85,88 @@ function sanitizeInput(input: SignMaintenanceRecordInput) {
 function isValidMaintenanceStatus(
   status: MantenimientoRegistroFirma['status'],
 ): status is MaintenanceRecordStatus {
+  return normalizeMaintenanceRecordStatus(status) !== null;
+}
+
+function normalizeMaintenanceRecordStatus(
+  status: MantenimientoRegistroFirma['status'],
+): MaintenanceRecordStatus | null {
+  const normalizedStatus = String(status ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/-/g, '_');
+
+  if (
+    normalizedStatus === 'draft' ||
+    normalizedStatus === 'borrador' ||
+    normalizedStatus === 'pending_supervisor' ||
+    normalizedStatus === 'pendiente_supervisor' ||
+    normalizedStatus === 'pending_quality' ||
+    normalizedStatus === 'pendiente_calidad' ||
+    normalizedStatus === 'approved' ||
+    normalizedStatus === 'aprobado' ||
+    normalizedStatus === 'rejected' ||
+    normalizedStatus === 'rechazado'
+  ) {
+    if (normalizedStatus === 'borrador') {
+      return 'draft';
+    }
+
+    if (normalizedStatus === 'pendiente_supervisor') {
+      return 'pending_supervisor';
+    }
+
+    if (normalizedStatus === 'pendiente_calidad') {
+      return 'pending_quality';
+    }
+
+    if (normalizedStatus === 'aprobado') {
+      return 'approved';
+    }
+
+    if (normalizedStatus === 'rechazado') {
+      return 'rejected';
+    }
+
+    return normalizedStatus as MaintenanceRecordStatus;
+  }
+
+  return null;
+}
+
+function isStrictPendingSupervisorStatus(status: MantenimientoRegistroFirma['status']) {
+  return String(status ?? '').trim() === 'PENDING_SUPERVISOR';
+}
+
+function isAdministrativeConsultationRole(role: string | null | undefined) {
+  return String(role ?? '').trim().toLowerCase() === 'administrativo';
+}
+
+function isSupervisorOrHigherRole(role: string | null | undefined) {
+  const normalizedRole = String(role ?? '').trim().toLowerCase();
+
   return (
-    status === 'draft' ||
-    status === 'pending_supervisor' ||
-    status === 'pending_quality' ||
-    status === 'approved' ||
-    status === 'rejected'
+    normalizedRole === 'supervisor' ||
+    normalizedRole === 'superadmin' ||
+    normalizedRole === 'administrador' ||
+    normalizedRole === 'calidad' ||
+    normalizedRole === 'propietario / gerencia' ||
+    normalizedRole === 'gerente general'
   );
 }
 
 function canSignCurrentStep(
   signingRole: MaintenanceSigningRole,
-  status: MaintenanceRecordStatus,
+  status: MaintenanceRecordStatus | string | null,
 ) {
+  const normalizedStatus = normalizeMaintenanceRecordStatus(status);
+
   if (signingRole === 'supervisor') {
-    return status === 'pending_supervisor';
+    return normalizedStatus === 'pending_supervisor';
   }
 
-  return status === 'pending_quality';
+  return normalizedStatus === 'pending_quality';
 }
 
 function resolveApprovedStatus(signingRole: MaintenanceSigningRole): MaintenanceRecordStatus {
@@ -400,6 +464,22 @@ export async function signMaintenanceRecordAction(
         stage: 'status_validation',
         code: 'terminal_status',
         details: { status: maintenanceRecord.status },
+      },
+    };
+  }
+
+  if (
+    signingRole === 'supervisor' &&
+    isStrictPendingSupervisorStatus(maintenanceRecord.status) &&
+    isAdministrativeConsultationRole(permisos.role)
+  ) {
+    return {
+      ok: false,
+      message: 'Perfil Administrativo autorizado solo para consulta en supervision operativa.',
+      debug: {
+        stage: 'rbac_validation',
+        code: 'administrative_read_only_profile',
+        details: { signerEmail, role: permisos.role },
       },
     };
   }
