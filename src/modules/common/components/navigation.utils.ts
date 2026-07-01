@@ -1,4 +1,4 @@
-import type { NavigationNode } from './navigation.interface';
+import type { NavigationCapabilities, NavigationNode } from './navigation.interface';
 
 function normalizeRole(role: string) {
   return role
@@ -57,7 +57,28 @@ function getNodeRoles(node: NavigationNode) {
   return node.roles ?? node.rolesAllowed ?? [];
 }
 
-function canDisplayNode(node: NavigationNode, role: string) {
+function hasRequiredCapabilities(
+  node: NavigationNode,
+  capabilities: NavigationCapabilities = {},
+) {
+  const requiredCapabilities = node.requiredCapabilities ?? [];
+
+  if (requiredCapabilities.length === 0) {
+    return false;
+  }
+
+  return requiredCapabilities.some((capability) => capabilities[capability] === true);
+}
+
+function canDisplayNode(
+  node: NavigationNode,
+  role: string,
+  capabilities: NavigationCapabilities = {},
+) {
+  if (hasRequiredCapabilities(node, capabilities)) {
+    return true;
+  }
+
   const nodeRoles = getNodeRoles(node);
 
   if (nodeRoles.length === 0 || nodeRoles.includes('*')) {
@@ -76,14 +97,15 @@ function canDisplayNode(node: NavigationNode, role: string) {
 export function filterNavigationByRole(
   nodes: NavigationNode[],
   role: string,
+  capabilities: NavigationCapabilities = {},
 ): NavigationNode[] {
   return nodes.flatMap((node) => {
-    if (!canDisplayNode(node, role)) {
+    if (!canDisplayNode(node, role, capabilities)) {
       return [];
     }
 
     const children = node.children
-      ? filterNavigationByRole(node.children, role)
+      ? filterNavigationByRole(node.children, role, capabilities)
       : undefined;
 
     return [{ ...node, children }];

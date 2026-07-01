@@ -3,42 +3,12 @@ import { FlaskConical, ShieldAlert } from 'lucide-react';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 
 type UsuarioRolRow = {
+  can_approve: boolean | null;
+  can_create_assets: boolean | null;
   role: string | null;
 };
 
 const TARGET_URL = '/mantenimiento/crear-ordenes';
-
-function normalizeClearanceValue(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function isSuperadminClearanceValue(value: string | null | undefined) {
-  const normalizedValue = normalizeClearanceValue(String(value ?? ''));
-
-  return normalizedValue === 'superadmin' || normalizedValue.includes('superadmin');
-}
-
-function collectStringClaims(value: unknown): string[] {
-  if (typeof value === 'string') {
-    return [value];
-  }
-
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => collectStringClaims(item));
-  }
-
-  if (value && typeof value === 'object') {
-    return Object.values(value as Record<string, unknown>).flatMap((item) =>
-      collectStringClaims(item),
-    );
-  }
-
-  return [];
-}
-
-function hasSuperadminClearance(values: unknown[]) {
-  return values.flatMap((value) => collectStringClaims(value)).some(isSuperadminClearanceValue);
-}
 
 async function resolveSecurityContext() {
   const supabase = await createSupabaseServerClient();
@@ -50,30 +20,21 @@ async function resolveSecurityContext() {
   const { data } = userEmail
     ? await supabase
         .from('usuarios_roles')
-        .select('role')
+        .select('role, can_approve, can_create_assets')
         .eq('user_email', userEmail)
         .eq('active', true)
         .order('id', { ascending: true })
     : { data: null };
 
   const profiles = (data ?? []) as UsuarioRolRow[];
-  const activeRoleClaims = profiles.map((profile) => profile.role).filter(Boolean);
-  const tokenClearanceClaims = [
-    user?.app_metadata,
-    user?.user_metadata,
-    user?.role,
-    user?.aud,
-    user?.identities,
-  ];
-  const hasSuperadminAccess = hasSuperadminClearance([
-    activeRoleClaims,
-    ...tokenClearanceClaims,
-  ]);
+  const hasOrderCreationAccess = profiles.some(
+    (profile) => profile.can_approve === true || profile.can_create_assets === true,
+  );
 
   return {
     userId: user?.id ?? null,
     userRole: profiles[0]?.role ?? 'Sin rol activo',
-    hasSuperadminAccess,
+    hasOrderCreationAccess,
   };
 }
 
@@ -153,9 +114,9 @@ function AccessDeniedScreen({ counterValue }: { counterValue: number }) {
 }
 
 export default async function CrearOrdenesPage() {
-  const { userId, userRole, hasSuperadminAccess } = await resolveSecurityContext();
+  const { userId, userRole, hasOrderCreationAccess } = await resolveSecurityContext();
 
-  if (!hasSuperadminAccess) {
+  if (!hasOrderCreationAccess) {
     const counterValue = await registerDeniedAccess({
       userId,
       userRole,

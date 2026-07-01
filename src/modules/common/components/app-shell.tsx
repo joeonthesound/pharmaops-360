@@ -9,6 +9,11 @@ import { supabase } from '@/shared/lib/supabase';
 
 type AppShellProps = {
   children: React.ReactNode;
+  currentCapabilities?: {
+    can_approve?: boolean;
+    can_create_assets?: boolean;
+  };
+  currentUserEmail: string;
   currentRole: string;
   currentUserName: string;
 };
@@ -139,7 +144,13 @@ function DynamicBreadcrumbs({ pathname }: { pathname: string }) {
   );
 }
 
-export function AppShell({ children, currentRole, currentUserName }: AppShellProps) {
+export function AppShell({
+  children,
+  currentCapabilities = {},
+  currentRole,
+  currentUserEmail,
+  currentUserName,
+}: AppShellProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const pathname = usePathname();
   const initials = getInitials(currentUserName || 'P360') || 'P';
@@ -154,7 +165,11 @@ export function AppShell({ children, currentRole, currentUserName }: AppShellPro
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="hidden print:hidden md:fixed md:inset-y-0 md:left-0 md:block md:w-72">
-        <Sidebar currentRole={currentRole} currentPath={pathname} />
+        <Sidebar
+          capabilities={currentCapabilities}
+          currentRole={currentRole}
+          currentPath={pathname}
+        />
       </div>
 
       {isMobileOpen ? (
@@ -166,7 +181,11 @@ export function AppShell({ children, currentRole, currentUserName }: AppShellPro
             type="button"
           />
           <div className="absolute inset-y-0 left-0 w-72 shadow-2xl">
-            <Sidebar currentRole={currentRole} currentPath={pathname} />
+            <Sidebar
+              capabilities={currentCapabilities}
+              currentRole={currentRole}
+              currentPath={pathname}
+            />
           </div>
         </div>
       ) : null}
@@ -213,6 +232,9 @@ export function AppShell({ children, currentRole, currentUserName }: AppShellPro
                 </p>
                 <p className={`truncate text-xs ${isTechnicianProfile ? 'text-blue-700' : 'text-slate-500'}`}>
                   {currentRole}
+                </p>
+                <p className={`truncate text-[11px] ${isTechnicianProfile ? 'text-blue-600' : 'text-slate-400'}`}>
+                  {currentUserEmail}
                 </p>
               </div>
             </div>

@@ -28,10 +28,16 @@ import {
   ROLE_SIDEBAR_THEME,
 } from './navigation.config';
 import { signOutAction } from '@/modules/common/actions';
-import type { NavigationNode, PharmaOpsRole, SidebarTheme } from './navigation.interface';
+import type {
+  NavigationCapabilities,
+  NavigationNode,
+  PharmaOpsRole,
+  SidebarTheme,
+} from './navigation.interface';
 import { filterNavigationByRole } from './navigation.utils';
 
 type SidebarProps = {
+  capabilities?: NavigationCapabilities;
   currentRole: string;
   currentPath?: string;
 };
@@ -107,13 +113,13 @@ function NavigationIcon({ name, className }: { name?: string; className: string 
   return <Icon aria-hidden="true" className={className} size={18} strokeWidth={2} />;
 }
 
-export function Sidebar({ currentRole, currentPath = '' }: SidebarProps) {
+export function Sidebar({ capabilities = {}, currentRole, currentPath = '' }: SidebarProps) {
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const theme = resolveTheme(currentRole);
   const navigation = useMemo(
-    () => filterNavigationByRole(NAVIGATION_TREE, currentRole),
-    [currentRole],
+    () => filterNavigationByRole(NAVIGATION_TREE, currentRole, capabilities),
+    [capabilities, currentRole],
   );
 
   function toggleMenu(title: string) {

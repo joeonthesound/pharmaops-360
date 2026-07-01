@@ -8,12 +8,17 @@ type AppLayoutProps = {
 };
 
 type UsuarioRolRow = {
+  can_approve: boolean | null;
+  can_create_assets: boolean | null;
   full_name: string | null;
   role: string | null;
   notes: string | null;
 };
 
 type CurrentUserContext = {
+  canApprove: boolean;
+  canCreateAssets: boolean;
+  email: string;
   fullName: string;
   role: string;
 };
@@ -90,10 +95,10 @@ async function resolveCurrentUserContext(): Promise<CurrentUserContext | null> {
 
   const { data, error } = await supabase
     .from('usuarios_roles')
-    .select('full_name, role, notes')
+    .select('full_name, role, notes, can_approve, can_create_assets')
     .eq('user_email', email)
     .eq('active', true)
-    .maybeSingle();
+    .order('id', { ascending: true });
 
   if (error) {
     console.error('[ALERTA AUDITORÍA GxP] Error resolviendo rol de usuario', {
@@ -105,14 +110,15 @@ async function resolveCurrentUserContext(): Promise<CurrentUserContext | null> {
     return null;
   }
 
-  if (!data) {
+  if (!data || data.length === 0) {
     console.error(
       `[ALERTA AUDITORÍA GxP] Intento de acceso no autorizado o sin rol asignado: ${email}`,
     );
     return null;
   }
 
-  const profile = data as UsuarioRolRow;
+  const profiles = data as UsuarioRolRow[];
+  const profile = profiles[0];
   const normalizedRole = normalizeRole(profile.role);
 
   if (isTemporalProfileExpired(normalizedRole, profile.notes)) {
@@ -128,6 +134,9 @@ async function resolveCurrentUserContext(): Promise<CurrentUserContext | null> {
   }
 
   return {
+    canApprove: profiles.some((item) => item.can_approve === true),
+    canCreateAssets: profiles.some((item) => item.can_create_assets === true),
+    email,
     fullName: profile.full_name?.trim() || email,
     role: normalizedRole,
   };
@@ -141,7 +150,15 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   }
 
   return (
-    <AppShell currentRole={currentUser.role} currentUserName={currentUser.fullName}>
+    <AppShell
+      currentCapabilities={{
+        can_approve: currentUser.canApprove,
+        can_create_assets: currentUser.canCreateAssets,
+      }}
+      currentRole={currentUser.role}
+      currentUserEmail={currentUser.email}
+      currentUserName={currentUser.fullName}
+    >
       {children}
     </AppShell>
   );
