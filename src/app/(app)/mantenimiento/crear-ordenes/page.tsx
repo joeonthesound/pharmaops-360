@@ -175,7 +175,7 @@ export default async function CrearOrdenesPage() {
             <p className="text-xs font-black uppercase tracking-wide text-emerald-700">
               Entorno restringido Superadmin
             </p>
-            <h1 className="mt-1 text-2xl font-black tracking-tight">Crear Ordenes</h1>
+            <h1 className="mt-1 text-2xl font-black tracking-tight">Crear Órdenes</h1>
             <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-600">
               Modulo reservado para creacion controlada de ordenes de mantenimiento en ambientes
               de validacion.

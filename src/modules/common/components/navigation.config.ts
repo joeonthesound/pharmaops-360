@@ -134,7 +134,7 @@ export const NAVIGATION_TREE: NavigationNode[] = [
         ],
       },
       {
-        title: 'Crear Ordenes',
+        title: 'Crear Órdenes',
         href: '/mantenimiento/crear-ordenes',
         icon: 'FlaskConical',
         rolesAllowed: ['Superadmin'],
