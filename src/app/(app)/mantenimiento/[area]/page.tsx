@@ -706,8 +706,26 @@ async function resolveVirtualEvidenceCampoId(
   };
 }
 
-function isDraftStatus(status: string | null | undefined) {
-  return status === 'draft' || status === 'Borrador';
+const EDITABLE_MAINTENANCE_STATUSES = new Set([
+  'DRAFT',
+  'PENDING_TECHNICIAN',
+  'REJECTED',
+  'RECHAZADO_TECNICO',
+  'BORRADOR',
+]);
+
+function normalizeStatusToken(status: string | null | undefined) {
+  return normalizeUtf8String(status).toUpperCase();
+}
+
+function isEditableMaintenanceStatus(status: string | null | undefined) {
+  return EDITABLE_MAINTENANCE_STATUSES.has(normalizeStatusToken(status));
+}
+
+function isRejectedEditableStatus(status: string | null | undefined) {
+  const normalizedStatus = normalizeStatusToken(status);
+
+  return normalizedStatus === 'REJECTED' || normalizedStatus === 'RECHAZADO_TECNICO';
 }
 
 function resolveStatusBanner(status: MaintenanceStatus) {
@@ -892,7 +910,7 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
 
       const cabeceraExistenteValidada = cabeceraExistente as MantenimientoCabecera;
 
-      if (!isDraftStatus(cabeceraExistenteValidada.status) && cabeceraExistenteValidada.status !== 'rejected') {
+      if (!isEditableMaintenanceStatus(cabeceraExistenteValidada.status)) {
         return {
           ok: false,
           message: 'La orden no esta en un estado editable para guardar la inspeccion.',
@@ -917,7 +935,7 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
         };
       }
 
-      if (cabeceraExistenteValidada.status === 'rejected') {
+      if (isRejectedEditableStatus(cabeceraExistenteValidada.status)) {
         auditAction = 'RE-SUBMISSION';
         shouldClearRejectedState = true;
       }

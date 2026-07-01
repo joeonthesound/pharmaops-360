@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import { AlertTriangle, ClipboardList, Search } from 'lucide-react';
 import {
@@ -30,6 +30,7 @@ function groupFieldsBySection(fields: MaintenanceTemplateField[]) {
 }
 
 export function OrderCreationForm({ assets }: OrderCreationFormProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAssetUuid, setSelectedAssetUuid] = useState('');
@@ -96,6 +97,14 @@ export function OrderCreationForm({ assets }: OrderCreationFormProps) {
 
       setMessage(result.message);
       setCreatedRecordUuid(result.recordUuid ?? null);
+
+      if (result.ok) {
+        router.push(
+          `/dashboard?view=pending&order_created=1${
+            result.recordUuid ? `&record=${encodeURIComponent(result.recordUuid)}` : ''
+          }`,
+        );
+      }
     });
   }
 

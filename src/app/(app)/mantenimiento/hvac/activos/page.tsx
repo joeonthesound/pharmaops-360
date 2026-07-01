@@ -21,11 +21,13 @@ type ActivoConUuid = Activo & {
 
 type MaintenanceStatus =
   | 'draft'
+  | 'pending_technician'
   | 'pending_supervisor'
   | 'pending_quality'
   | 'rejected'
   | 'approved'
   | 'Draft'
+  | 'PENDING_TECHNICIAN'
   | 'Pending_Supervisor'
   | 'Pending_Quality'
   | 'Rejected'
@@ -60,11 +62,13 @@ const estadoClasses: Record<ActivoEstado, string> = {
 
 const orderStatusClasses: Record<MantenimientoRegistro['status'], string> = {
   draft: 'border-slate-200 bg-slate-100 text-slate-700',
+  pending_technician: 'border-indigo-200 bg-indigo-50 text-indigo-800',
   pending_supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
   pending_quality: 'border-sky-200 bg-sky-50 text-sky-800',
   rejected: 'border-red-200 bg-red-50 text-red-800',
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   Draft: 'border-slate-200 bg-slate-100 text-slate-700',
+  PENDING_TECHNICIAN: 'border-indigo-200 bg-indigo-50 text-indigo-800',
   Pending_Supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
   Pending_Quality: 'border-sky-200 bg-sky-50 text-sky-800',
   Rejected: 'border-red-200 bg-red-50 text-red-800',
@@ -80,11 +84,13 @@ const orderStatusClasses: Record<MantenimientoRegistro['status'], string> = {
 
 const orderStatusLabel: Record<MantenimientoRegistro['status'], string> = {
   draft: 'Borrador',
+  pending_technician: 'Pendiente Tecnico',
   pending_supervisor: 'Pendiente Supervisor',
   pending_quality: 'Pendiente Calidad',
   rejected: 'Rechazado',
   approved: 'Aprobado',
   Draft: 'Borrador',
+  PENDING_TECHNICIAN: 'Pendiente Tecnico',
   Pending_Supervisor: 'Pendiente Supervisor',
   Pending_Quality: 'Pendiente Calidad',
   Rejected: 'Rechazado',
@@ -131,6 +137,8 @@ const SENT_STATUSES: Array<MantenimientoRegistro['status']> = [
 ];
 const PENDING_STATUSES: Array<MantenimientoRegistro['status']> = [
   'draft',
+  'pending_technician',
+  'PENDING_TECHNICIAN',
   'Draft',
   'Borrador',
 ];

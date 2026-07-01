@@ -9,6 +9,8 @@ type DashboardPageProps = {
     deviations?: string;
     q?: string;
     risk?: string;
+    order_created?: string;
+    record?: string;
     view?: string;
   }>;
 };
@@ -21,11 +23,13 @@ type ActivoConUuid = Activo & {
 
 type MaintenanceStatus =
   | 'draft'
+  | 'pending_technician'
   | 'pending_supervisor'
   | 'pending_quality'
   | 'rejected'
   | 'approved'
   | 'Draft'
+  | 'PENDING_TECHNICIAN'
   | 'Pending_Supervisor'
   | 'Pending_Quality'
   | 'Rejected'
@@ -60,11 +64,13 @@ const estadoClasses: Record<ActivoEstado, string> = {
 
 const orderStatusClasses: Record<MantenimientoRegistro['status'], string> = {
   draft: 'border-slate-200 bg-slate-100 text-slate-700',
+  pending_technician: 'border-indigo-200 bg-indigo-50 text-indigo-800',
   pending_supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
   pending_quality: 'border-sky-200 bg-sky-50 text-sky-800',
   rejected: 'border-red-200 bg-red-50 text-red-800',
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   Draft: 'border-slate-200 bg-slate-100 text-slate-700',
+  PENDING_TECHNICIAN: 'border-indigo-200 bg-indigo-50 text-indigo-800',
   Pending_Supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
   Pending_Quality: 'border-sky-200 bg-sky-50 text-sky-800',
   Rejected: 'border-red-200 bg-red-50 text-red-800',
@@ -80,11 +86,13 @@ const orderStatusClasses: Record<MantenimientoRegistro['status'], string> = {
 
 const orderStatusLabel: Record<MantenimientoRegistro['status'], string> = {
   draft: 'Borrador',
+  pending_technician: 'Pendiente Tecnico',
   pending_supervisor: 'Pendiente Supervisor',
   pending_quality: 'Pendiente Calidad',
   rejected: 'Rechazado',
   approved: 'Aprobado',
   Draft: 'Borrador',
+  PENDING_TECHNICIAN: 'Pendiente Tecnico',
   Pending_Supervisor: 'Pendiente Supervisor',
   Pending_Quality: 'Pendiente Calidad',
   Rejected: 'Rechazado',
@@ -115,6 +123,8 @@ const SENT_STATUSES: Array<MantenimientoRegistro['status']> = [
 ];
 const PENDING_STATUSES: Array<MantenimientoRegistro['status']> = [
   'draft',
+  'pending_technician',
+  'PENDING_TECHNICIAN',
   'Draft',
   'Borrador',
 ];
@@ -237,6 +247,8 @@ function isClosedWorkflowRecord(registro: MantenimientoRegistro) {
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const currentView = normalizeView(resolvedSearchParams.view);
+  const orderCreated = resolvedSearchParams.order_created === '1';
+  const createdRecordUuid = String(resolvedSearchParams.record ?? '');
   const historySearchTerm = String(resolvedSearchParams.q ?? '');
   const selectedHistoryAsset = String(resolvedSearchParams.asset ?? '');
   const showOnlyDeviations = resolvedSearchParams.deviations === 'true';
@@ -408,6 +420,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             );
           })}
         </nav>
+
+        {orderCreated ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
+            Orden de mantenimiento generada correctamente en Fase 1: Tecnico.
+            {createdRecordUuid ? (
+              <span className="ml-1 font-mono text-xs text-emerald-800">{createdRecordUuid}</span>
+            ) : null}
+          </div>
+        ) : null}
 
         {queryError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">
