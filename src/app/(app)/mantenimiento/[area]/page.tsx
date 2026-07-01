@@ -3,6 +3,7 @@ import { QrCode } from 'lucide-react';
 import type { Activo } from '@/modules/activos/activos.interface';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { ChecklistForm } from './checklist-form';
+import { CopyRuiButton } from './copy-rui-button';
 import { PrintReportButton } from './print-report-button';
 import { SignatureReviewCard } from './signature-review-card';
 
@@ -1125,7 +1126,10 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                   const isOutOfRange = isOutOfRangeResponse(respuesta);
 
                   return (
-                    <tr className="border-b border-slate-200 align-top" key={`print-flow-${respuesta.field_key}`}>
+                    <tr
+                      className="border-b border-slate-200 align-top odd:bg-white even:bg-slate-50/80"
+                      key={`print-flow-${respuesta.field_key}`}
+                    >
                       <td className="px-1.5 py-1 font-semibold text-black">{respuesta.field_label}</td>
                       <td className="px-1.5 py-1 font-bold text-black">
                         {isOutOfRange ? (
@@ -1194,9 +1198,12 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
             <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">
               Report Unique ID
             </p>
-            <p className="truncate text-sm font-black">
-              {maintenanceRecord?.uuid ?? requestedUuid}
-            </p>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <p className="truncate text-sm font-black">
+                {maintenanceRecord?.uuid ?? requestedUuid}
+              </p>
+              <CopyRuiButton value={maintenanceRecord?.uuid ?? requestedUuid} />
+            </div>
           </div>
           <div className="hidden text-center sm:block">
             <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">Activo</p>
@@ -1249,7 +1256,10 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                     const isOutOfRange = isOutOfRangeResponse(respuesta);
 
                     return (
-                      <tr className="border-b border-slate-100 align-top" key={respuesta.field_key}>
+                      <tr
+                        className="border-b border-slate-100 align-top odd:bg-white even:bg-slate-50/80"
+                        key={respuesta.field_key}
+                      >
                         <td className="px-3 py-2 font-bold text-slate-900">{respuesta.field_label}</td>
                         <td className="px-3 py-2">
                           <span

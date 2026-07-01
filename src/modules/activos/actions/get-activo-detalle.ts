@@ -84,6 +84,7 @@ export type ActivoDetallePayload = {
   seguridad: {
     puedeEditar: boolean;
     puedeDarDeBaja: boolean;
+    usuarioRole: string | null;
   };
   debug: {
     activoId: string;
@@ -348,6 +349,9 @@ export async function getActivoDetalle(activoId: string): Promise<ActivoDetalleP
     : { data: null };
   const usuarioPerfil = (usuarioPerfilData ?? null) as UsuarioPerfilRow | null;
   const puedeAdministrarActivo = isPrivilegedAssetProfileOperator(usuarioPerfil);
+  const usuarioRole =
+    usuarioPerfil?.role ??
+    (ROOT_SUPERUSER_EMAILS.includes(usuarioEmail) ? 'Superadmin' : null);
 
   const { data: activoData, error: activoError } = await fetchActivoByIdentifier(
     supabase,
@@ -373,6 +377,7 @@ export async function getActivoDetalle(activoId: string): Promise<ActivoDetalleP
       seguridad: {
         puedeEditar: puedeAdministrarActivo,
         puedeDarDeBaja: puedeAdministrarActivo,
+        usuarioRole,
       },
       debug: {
         activoId,
@@ -403,6 +408,7 @@ export async function getActivoDetalle(activoId: string): Promise<ActivoDetalleP
     seguridad: {
       puedeEditar: puedeAdministrarActivo,
       puedeDarDeBaja: puedeAdministrarActivo,
+      usuarioRole,
     },
     debug: {
       activoId,

@@ -8,8 +8,6 @@ import {
   Gauge,
   ImageIcon,
   ShieldCheck,
-  SlidersHorizontal,
-  Trash2,
 } from 'lucide-react';
 import {
   getActivoDetalle,
@@ -17,6 +15,10 @@ import {
 } from '@/modules/activos/actions/get-activo-detalle';
 import { EvidencePreviewGallery } from './evidence-preview-gallery';
 import { SuperadminDebugPanel } from './superadmin-debug-panel';
+import {
+  AdminQualificationCard,
+  SuperadminDestructiveCard,
+} from './asset-compliance-panels';
 
 type ActivoHvacDetallePageProps = {
   params: Promise<{
@@ -158,6 +160,24 @@ function DisabledSpecInput({ label, value }: { label: string; value: string }) {
   );
 }
 
+function normalizeRole(value: string | null | undefined) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function isAdminProfile(role: string | null | undefined) {
+  const normalizedRole = normalizeRole(role);
+
+  return normalizedRole === 'administrador' || normalizedRole === 'superadmin';
+}
+
+function isSuperadminProfile(role: string | null | undefined) {
+  return normalizeRole(role) === 'superadmin';
+}
+
 export default async function ActivoHvacDetallePage({
   params,
 }: ActivoHvacDetallePageProps) {
@@ -192,6 +212,9 @@ export default async function ActivoHvacDetallePage({
   const activo = data.activo;
   const location = [activo.location_detail, activo.area, activo.site].filter(Boolean).join(' / ');
   const assetTitle = `${activo.asset_code} (${activo.asset_name || 'Air Handling Unit UMA-01'})`;
+  const currentUserRole = data.seguridad.usuarioRole;
+  const canRenderAdminPanel = isAdminProfile(currentUserRole);
+  const canRenderSuperadminPanel = isSuperadminProfile(currentUserRole);
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950">
@@ -301,49 +324,11 @@ export default async function ActivoHvacDetallePage({
               </div>
             </section>
 
-            <section className="rounded-lg border border-[#C76E00] bg-orange-50 p-4 shadow-sm">
-              <div className="flex items-start gap-2">
-                <SlidersHorizontal aria-hidden="true" className="mt-0.5 text-[#C76E00]" size={18} />
-                <div>
-                  <h2 className="text-sm font-black text-slate-950">Perfil Admin</h2>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-slate-700">
-                    Cambios de parametros requieren justificacion GxP y huella de auditoria.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-3">
-                <input
-                  className="h-10 rounded-md border border-orange-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none"
-                  placeholder="Nuevo setpoint autorizado"
-                  readOnly
-                />
-                <Link
-                  className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#C76E00] px-4 text-sm font-black text-white transition hover:brightness-95"
-                  href={`/activos/gestionar?id=${encodeURIComponent(activo.uuid)}`}
-                >
-                  Modificar Parametros de Calificacion
-                </Link>
-              </div>
-            </section>
+            {canRenderAdminPanel ? <AdminQualificationCard activoUuid={activo.uuid} /> : null}
 
-            <section className="rounded-lg border border-rose-200 bg-rose-50 p-4 shadow-sm">
-              <div className="flex items-start gap-2">
-                <AlertTriangle aria-hidden="true" className="mt-0.5 text-rose-700" size={18} />
-                <div>
-                  <h2 className="text-sm font-black text-rose-950">Perfil SuperAdmin</h2>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-rose-800">
-                    Accion destructiva logica. No elimina datos; descalifica el activo y preserva la pista ALCOA+.
-                  </p>
-                </div>
-              </div>
-              <button
-                className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border-2 border-rose-700 bg-white px-4 text-sm font-black text-rose-700 transition hover:bg-rose-100"
-                type="button"
-              >
-                <Trash2 aria-hidden="true" size={17} />
-                Dar de Baja del Sistema (Descalificar Activo)
-              </button>
-            </section>
+            {canRenderSuperadminPanel ? (
+              <SuperadminDestructiveCard activoUuid={activo.uuid} />
+            ) : null}
           </aside>
         </section>
 
