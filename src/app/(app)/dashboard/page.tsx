@@ -22,7 +22,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-normal">Dashboard</h1>
             <p className="mt-1 text-sm text-slate-600">
-              Vista general de acceso. Las ordenes HVAC se consultan desde su ruta de planta
+              Esta esla vista general de acceso. Las ordenes HVAC se consultan desde su ruta de planta
               dedicada para mantener aislados los filtros por rol y estado.
             </p>
           </div>
