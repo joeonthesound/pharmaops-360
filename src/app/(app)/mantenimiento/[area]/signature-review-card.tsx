@@ -17,6 +17,7 @@ type MaintenanceStatus =
   | 'pending_quality'
   | 'pending_management'
   | 'approved'
+  | 'closed'
   | 'rejected';
 
 type SignatureReviewCardProps = {
@@ -129,8 +130,17 @@ export function SignatureReviewCard({
   const canSubmit = comments.trim().length >= requiredCommentLength && !isPending;
   const reviewLabel = resolveReviewLabel(signingRole);
   const isAdministrativeConsultation = false;
+  const isTerminalStatus = status === 'approved' || status === 'closed';
+  const isAlreadySignedByManagement =
+    signingRole === 'management' && (Boolean(signedAt) || isTerminalStatus);
+  const isGerenciaButtonDisabled = isAlreadySignedByManagement || isPending;
+  const canRenderActions = activeStep && canSign && !isAlreadySignedByManagement && !isTerminalStatus;
 
   function openSignatureModal(action: MaintenanceSigningAction) {
+    if (isAlreadySignedByManagement || isTerminalStatus) {
+      return;
+    }
+
     setSignatureIntent(action);
     setTargetStatus(defaultReturnStage);
     setComments('');
@@ -249,7 +259,13 @@ export function SignatureReviewCard({
         </div>
       ) : null}
 
-      {activeStep && canSign ? (
+      {isAlreadySignedByManagement ? (
+        <div className="print:hidden mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-black text-emerald-900">
+          Registro Cerrado y Firmado Digitalmente por Gerencia
+        </div>
+      ) : null}
+
+      {canRenderActions ? (
         <div className="print:hidden mt-4 grid gap-3">
           <p className="text-sm text-slate-600">
             Usuario en sesion: <span className="font-semibold">{currentUserRole}</span>
@@ -257,7 +273,7 @@ export function SignatureReviewCard({
           <div className="grid gap-3 sm:grid-cols-2">
             <button
               className="h-11 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:bg-slate-300"
-              disabled={isPending}
+              disabled={isGerenciaButtonDisabled}
               onClick={() => openSignatureModal('approve')}
               type="button"
             >
@@ -265,7 +281,7 @@ export function SignatureReviewCard({
             </button>
             <button
               className="h-11 rounded-md border border-red-300 bg-white px-4 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:border-slate-200 disabled:text-slate-300"
-              disabled={isPending}
+              disabled={isGerenciaButtonDisabled}
               onClick={() => openSignatureModal('reject')}
               type="button"
             >
@@ -286,7 +302,7 @@ export function SignatureReviewCard({
         </div>
       ) : null}
 
-      {isModalOpen ? (
+      {isModalOpen && !isAlreadySignedByManagement && !isTerminalStatus ? (
         <div
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 print:hidden"

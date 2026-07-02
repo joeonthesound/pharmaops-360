@@ -309,6 +309,10 @@ function resolveApprovedStatus(signingRole: MaintenanceSigningRole): Maintenance
     return 'PENDING_QUALITY';
   }
 
+  if (signingRole === 'management') {
+    return 'APPROVED';
+  }
+
   return 'PENDING_MANAGEMENT';
 }
 
@@ -736,6 +740,10 @@ export async function signMaintenanceRecordAction(
     : updatePayload.status;
 
   revalidatePath(`/mantenimiento/${recordUuid}/aprobar`);
+  revalidatePath(`/mantenimiento/hvac/rui/enviado/${recordUuid}`);
+  revalidatePath(`/mantenimiento/hvac/rui/ht/${recordUuid}`);
+  revalidatePath('/mantenimiento/hvac/page');
+  revalidatePath('/mantenimiento/hvac');
   revalidatePath(`/mantenimiento/hvac/rui/ht`);
   revalidatePath('/dashboard');
 
