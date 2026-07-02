@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { EvidenceLightboxGallery } from '@/modules/mantenimiento/components/evidence-lightbox-gallery';
 import { ApprovalActionsPanel } from './approval-actions-panel';
+import { ApprovalHeaderToolbar } from './approval-header-toolbar';
 
 type AprobarPageProps = {
   params: Promise<{
@@ -134,6 +135,16 @@ function normalizeMaintenanceStatus(status: string | null | undefined): Maintena
   }
 
   return 'draft';
+}
+
+function resolveMaintenanceWorkflowArea(registro: MantenimientoRegistro | null) {
+  const templateCode = String(registro?.template_code ?? '').trim().toLowerCase();
+
+  if (templateCode.includes('hvac')) {
+    return 'hvac';
+  }
+
+  return 'hvac';
 }
 
 function formatLocation(activo: ActivoResumen | null) {
@@ -353,6 +364,7 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
 
   const registro = registroData as MantenimientoRegistro | null;
   const normalizedStatus = normalizeMaintenanceStatus(registro?.status);
+  const workflowArea = resolveMaintenanceWorkflowArea(registro);
 
   const [
     { data: activoData },
@@ -417,6 +429,7 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   Flujo humano de aprobacion con trazabilidad GxP / FDA 21 CFR Part 11.
                 </p>
+                <ApprovalHeaderToolbar area={workflowArea} />
               </div>
               <span
                 className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusClass[normalizedStatus]}`}
