@@ -217,8 +217,19 @@ function isQualityAssuranceRole(role: string | null | undefined) {
   ].includes(normalizedRole);
 }
 
+function hasApproveCapability(canApprove: UsuarioRolPermisos['can_approve']) {
+  return canApprove === true || String(canApprove).trim().toLowerCase() === 'true';
+}
+
 function canApproveAsQuality(permisos: UsuarioRolPermisos) {
-  return permisos.can_approve === true || isQualityAssuranceRole(permisos.role);
+  const normalizedRole = normalizeRoleValue(permisos.role);
+  const isQA =
+    normalizedRole === 'calidad' ||
+    normalizedRole === 'quality' ||
+    isQualityAssuranceRole(permisos.role) ||
+    hasApproveCapability(permisos.can_approve);
+
+  return isQA;
 }
 
 function sanitizeDirectedRejectionInput(input: DirectedRejectionInput) {
@@ -269,7 +280,7 @@ function canSignCurrentStep(
 }
 
 function resolveApprovedStatus(signingRole: MaintenanceSigningRole): MaintenanceRecordStatus {
-  return signingRole === 'supervisor' ? 'PENDING_QUALITY' : 'APPROVED';
+  return signingRole === 'supervisor' ? 'PENDING_QUALITY' : 'PENDING_MANAGEMENT';
 }
 
 function canReviewAsSupervisorOrHigher(permisos: UsuarioRolPermisos) {
@@ -507,6 +518,7 @@ export async function signMaintenanceRecordAction(
     profileRole: permisos.role,
     normalizedProfileRole: normalizeRoleValue(permisos.role),
     canApproveFlag: permisos.can_approve,
+    isQA: canApproveAsQuality(permisos),
     signingRole,
   });
 
