@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { QrCode } from 'lucide-react';
+import { ExternalLink, QrCode } from 'lucide-react';
 import type { Activo } from '@/modules/activos/activos.interface';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { ChecklistForm } from './checklist-form';
@@ -255,6 +255,8 @@ function normalizeMaintenanceStatus(status: string | null | undefined): Maintena
     normalizedStatus === 'pending_management' ||
     normalizedStatus === 'pendiente_gerencia' ||
     normalizedStatus === 'approved' ||
+    normalizedStatus === 'closed' ||
+    normalizedStatus === 'cerrado' ||
     normalizedStatus === 'aprobado' ||
     normalizedStatus === 'rejected' ||
     normalizedStatus === 'rechazado' ||
@@ -277,6 +279,10 @@ function normalizeMaintenanceStatus(status: string | null | undefined): Maintena
     }
 
     if (normalizedStatus === 'aprobado') {
+      return 'approved';
+    }
+
+    if (normalizedStatus === 'closed' || normalizedStatus === 'cerrado') {
       return 'approved';
     }
 
@@ -1534,10 +1540,20 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   ];
 
   if (isReadOnlyDocument) {
+    const rawRecordStatus = normalizeStatusToken(maintenanceRecord?.status);
+    const isTerminalClosedRecord =
+      rawRecordStatus === 'CLOSED' ||
+      Boolean(maintenanceRecord?.management_signed_at);
     const statusPanelClass =
-      normalizedStatus === 'approved'
-        ? 'bg-emerald-50 border-y border-emerald-200 text-emerald-900 px-4 py-2 flex items-center justify-between'
-        : 'bg-amber-50 border-y border-amber-200 text-amber-900 px-4 py-2 flex items-center justify-between';
+      isTerminalClosedRecord
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+        : 'border-amber-200 bg-amber-50 text-amber-900';
+    const statusPanelText = isTerminalClosedRecord
+      ? '🔐 REGISTRO CERRADO: Respaldo electrónico inmutable completado con éxito'
+      : statusBanner.text;
+    const assetProfileHref = activoHVAC
+      ? `/activos/hvac/ver/${activoHVAC.uuid ?? activoHVAC.asset_code}`
+      : null;
     const signatureCards = [
       {
         title: 'Tecnico',
@@ -1763,51 +1779,69 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                 <h1 className="text-2xl font-black tracking-normal text-slate-950">
                   {activoHVAC?.asset_name ?? 'Activo HVAC'}
                 </h1>
-                <p className="mt-1 text-sm font-semibold text-slate-600">
-                  {activoHVAC?.asset_code ?? 'Codigo de activo no disponible'}
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  <p className="text-sm font-semibold text-slate-600">
+                    {activoHVAC?.asset_code ?? 'Codigo de activo no disponible'}
+                  </p>
+                  {assetProfileHref ? (
+                    <Link
+                      className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                      href={assetProfileHref}
+                    >
+                      <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+                      Ver Activo
+                    </Link>
+                  ) : null}
+                </div>
               </div>
               <div className="grid gap-2 text-sm sm:grid-cols-2 lg:min-w-[28rem]">
                 <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                   <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
                     RUI UUID
                   </p>
-                  <p className="mt-1 break-all font-mono text-xs font-bold text-slate-950">
-                    {maintenanceRecord?.uuid ?? requestedUuid}
-                  </p>
+                  <div className="mt-1 flex min-w-0 items-center gap-2">
+                    <p className="break-all font-mono text-xs font-bold text-slate-950">
+                      {maintenanceRecord?.uuid ?? requestedUuid}
+                    </p>
+                    <CopyRuiButton value={maintenanceRecord?.uuid ?? requestedUuid} />
+                  </div>
                 </div>
                 <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                   <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
                     Record Code
                   </p>
-                  <p className="mt-1 font-bold text-slate-950">
-                    {maintenanceRecord?.record_code ?? 'Sin codigo'}
-                  </p>
+                  <div className="mt-1 flex min-w-0 items-center gap-2">
+                    <p className="truncate font-bold text-slate-950">
+                      {maintenanceRecord?.record_code ?? 'Sin codigo'}
+                    </p>
+                    {maintenanceRecord?.record_code ? (
+                      <CopyRuiButton value={maintenanceRecord.record_code} />
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        <section className={`${statusPanelClass} print:hidden`}>
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">
-              Report Unique ID
-            </p>
-            <div className="mt-1 flex min-w-0 items-center gap-2">
-              <p className="truncate text-sm font-black">
-                {maintenanceRecord?.uuid ?? requestedUuid}
+        <section className="max-w-7xl mx-auto px-4 w-full mt-4 print:hidden">
+          <div className={`flex items-center justify-between rounded-lg border px-4 py-3 shadow-sm ${statusPanelClass}`}>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">
+                Estado GxP del Registro
               </p>
-              <CopyRuiButton value={maintenanceRecord?.uuid ?? requestedUuid} />
+              <p className="mt-1 text-sm font-black">
+                {statusPanelText}
+              </p>
             </div>
+            <div className="hidden text-center sm:block">
+              <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">Activo</p>
+              <p className="text-sm font-black">{activoHVAC?.asset_code ?? 'Sin activo'}</p>
+            </div>
+            <span className="shrink-0 rounded-full border border-current bg-white/70 px-3 py-1 text-xs font-black uppercase tracking-wide">
+              {isTerminalClosedRecord ? 'CERRADO' : normalizedStatus}
+            </span>
           </div>
-          <div className="hidden text-center sm:block">
-            <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">Activo</p>
-            <p className="text-sm font-black">{activoHVAC?.asset_code ?? 'Sin activo'}</p>
-          </div>
-          <span className="shrink-0 rounded-full border border-current bg-white/70 px-3 py-1 text-xs font-black uppercase tracking-wide">
-            {normalizedStatus}
-          </span>
         </section>
 
         <div className="sticky top-0 z-20 mx-auto max-w-7xl bg-background/95 px-4 pt-6 pb-3 backdrop-blur print:hidden">

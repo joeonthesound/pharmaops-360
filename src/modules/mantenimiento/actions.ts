@@ -309,10 +309,6 @@ function resolveApprovedStatus(signingRole: MaintenanceSigningRole): Maintenance
     return 'PENDING_QUALITY';
   }
 
-  if (signingRole === 'management') {
-    return 'APPROVED';
-  }
-
   return 'PENDING_MANAGEMENT';
 }
 
