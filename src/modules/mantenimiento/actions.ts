@@ -194,6 +194,33 @@ function isSupervisorOrHigherRole(role: string | null | undefined) {
   );
 }
 
+function normalizeRoleValue(role: string | null | undefined) {
+  return String(role ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function isQualityAssuranceRole(role: string | null | undefined) {
+  const normalizedRole = normalizeRoleValue(role);
+
+  return [
+    'calidad',
+    'qa',
+    'quality',
+    'quality assurance',
+    'aseguramiento de calidad',
+    'aseguramiento de la calidad',
+    'auditor',
+  ].includes(normalizedRole);
+}
+
+function canApproveAsQuality(permisos: UsuarioRolPermisos) {
+  return permisos.can_approve === true || isQualityAssuranceRole(permisos.role);
+}
+
 function sanitizeDirectedRejectionInput(input: DirectedRejectionInput) {
   return {
     recordUuid: String(input.recordUuid ?? '').trim(),
@@ -472,6 +499,16 @@ export async function signMaintenanceRecordAction(
   }
 
   const permisos = usuario as UsuarioRolPermisos;
+  const userMetadata = user?.user_metadata as { role?: string | null } | null;
+
+  console.log('[DEBUG QA SECURITY GUARD]', {
+    userEmail: user?.email,
+    detectedRole: userMetadata?.role || permisos.role,
+    profileRole: permisos.role,
+    normalizedProfileRole: normalizeRoleValue(permisos.role),
+    canApproveFlag: permisos.can_approve,
+    signingRole,
+  });
 
   if (signingRole === 'supervisor' && !canReviewAsSupervisorOrHigher(permisos)) {
     return {
@@ -485,14 +522,19 @@ export async function signMaintenanceRecordAction(
     };
   }
 
-  if (signingRole === 'quality' && permisos.can_approve !== true) {
+  if (signingRole === 'quality' && !canApproveAsQuality(permisos)) {
     return {
       ok: false,
-      message: 'Usuario sin permiso can_approve para firma de Calidad.',
+      message: 'Falta rol de aseguramiento de calidad o permisos.',
       debug: {
         stage: 'rbac_validation',
-        code: 'missing_can_approve',
-        details: { signerEmail, role: permisos.role },
+        code: 'missing_quality_assurance_role_or_can_approve',
+        details: {
+          signerEmail,
+          role: permisos.role,
+          normalizedRole: normalizeRoleValue(permisos.role),
+          canApprove: permisos.can_approve,
+        },
       },
     };
   }

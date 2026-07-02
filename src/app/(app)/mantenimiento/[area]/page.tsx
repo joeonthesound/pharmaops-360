@@ -763,6 +763,38 @@ function resolveStatusBanner(status: MaintenanceStatus) {
   };
 }
 
+function resolveReturnHrefForStatus(status: MaintenanceStatus) {
+  if (status === 'approved' || status === 'pending_management') {
+    return '/mantenimiento/hvac/rui/ht';
+  }
+
+  if (status === 'rejected') {
+    return '/mantenimiento/hvac/rui/rechazado';
+  }
+
+  if (status === 'pending_supervisor' || status === 'pending_quality') {
+    return '/mantenimiento/hvac/rui/enviado';
+  }
+
+  return '/mantenimiento/hvac/rui/activo';
+}
+
+function resolveReturnLabelForStatus(status: MaintenanceStatus) {
+  if (status === 'approved' || status === 'pending_management') {
+    return 'Volver al Historial Tecnico';
+  }
+
+  if (status === 'rejected') {
+    return 'Volver a Ordenes Rechazadas';
+  }
+
+  if (status === 'pending_supervisor' || status === 'pending_quality') {
+    return 'Volver a Ordenes Enviadas';
+  }
+
+  return 'Volver a Ordenes Pendientes';
+}
+
 async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmitResult> {
   'use server';
 
@@ -1218,6 +1250,8 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   }
 
   const normalizedStatus = normalizeMaintenanceStatus(maintenanceRecord?.status) ?? 'draft';
+  const returnHref = resolveReturnHrefForStatus(normalizedStatus);
+  const returnLabel = resolveReturnLabelForStatus(normalizedStatus);
 
   const [
     { data: camposData, error: camposLookupError },
@@ -1496,10 +1530,10 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         <div className="h-14 shrink-0 border-b bg-white px-4 flex items-center justify-between print:hidden">
           <Link
             className="inline-flex h-10 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
-            href="/mantenimiento/hvac/rui/ht"
+            href={returnHref}
           >
             <span aria-hidden="true" className="mr-2">←</span>
-            Volver al Historial Tecnico
+            {returnLabel}
           </Link>
           <div className="flex items-center gap-2">
             <PrintReportButton />

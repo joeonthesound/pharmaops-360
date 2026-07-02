@@ -1,65 +1,14 @@
 import Link from 'next/link';
-import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
-import { DashboardTabErrorBoundary } from './DashboardTabErrorBoundary';
-import {
-  normalizeView,
-  tabs,
-  type DashboardSearchParams,
-  type DashboardView,
-} from './dashboardTypes';
-import { PendingOrdersTab } from './PendingOrdersTab';
-import { RejectedOrdersTab } from './RejectedOrdersTab';
-import { SentOrdersTab } from './SentOrdersTab';
-import { TechnicalHistoryTab } from './TechnicalHistoryTab';
 
 type DashboardPageProps = {
-  searchParams?: Promise<DashboardSearchParams>;
+  searchParams?: Promise<{
+    order_created?: string;
+    record?: string;
+  }>;
 };
 
-function renderActiveTab(currentView: DashboardView, searchParams: DashboardSearchParams) {
-  if (currentView === 'sent') {
-    return (
-      <DashboardTabErrorBoundary title="Ordenes enviadas" view="sent">
-        <SentOrdersTab />
-      </DashboardTabErrorBoundary>
-    );
-  }
-
-  if (currentView === 'rejected') {
-    return (
-      <DashboardTabErrorBoundary title="Ordenes rechazadas" view="rejected">
-        <RejectedOrdersTab />
-      </DashboardTabErrorBoundary>
-    );
-  }
-
-  if (currentView === 'history') {
-    return (
-      <DashboardTabErrorBoundary title="Historial tecnico" view="history">
-        <TechnicalHistoryTab searchParams={searchParams} />
-      </DashboardTabErrorBoundary>
-    );
-  }
-
-  return (
-    <DashboardTabErrorBoundary title="Ordenes pendientes" view="pending">
-      <PendingOrdersTab />
-    </DashboardTabErrorBoundary>
-  );
-}
-
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  console.log('[TELEMETRIA FORENSE F5]', {
-      hasUser: !!user,
-      userEmail: user?.email,
-      authError: authError?.message || null,
-      cookiesPresent: typeof window === 'undefined' ? 'Server Context Execution' : 'Client Context Mismatch'
-  });
-
   const resolvedSearchParams = searchParams ? await searchParams : {};
-  const currentView = normalizeView(resolvedSearchParams.view);
   const orderCreated = resolvedSearchParams.order_created === '1';
   const createdRecordUuid = String(resolvedSearchParams.record ?? '');
 
@@ -69,41 +18,21 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">
-              Piloto HVAC
+              PharmaOps 360
             </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-normal">Activos</h1>
+            <h1 className="mt-1 text-2xl font-semibold tracking-normal">Dashboard</h1>
             <p className="mt-1 text-sm text-slate-600">
-              Flota registrada para mantenimiento preventivo e inspeccion tecnica.
+              Vista general de acceso. Las ordenes HVAC se consultan desde su ruta de planta
+              dedicada para mantener aislados los filtros por rol y estado.
             </p>
           </div>
-          <button
-            aria-label="Escanear codigo QR"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-xl shadow-sm"
-            type="button"
+          <Link
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+            href="/mantenimiento/hvac/rui/activo"
           >
-            QR
-          </button>
+            Abrir planta HVAC
+          </Link>
         </header>
-
-        <nav className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:grid-cols-4">
-          {tabs.map((tab) => {
-            const isActive = currentView === tab.value;
-
-            return (
-              <Link
-                className={`flex min-h-11 items-center justify-center rounded-md px-3 text-center text-sm font-semibold transition ${
-                  isActive
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-white text-slate-700 hover:bg-slate-100'
-                }`}
-                href={`/dashboard?view=${tab.value}`}
-                key={tab.value}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
-        </nav>
 
         {orderCreated ? (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
@@ -116,7 +45,35 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         ) : null}
 
-        {renderActiveTab(currentView, resolvedSearchParams)}
+        <section className="grid gap-3 md:grid-cols-3">
+          <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Modulo activo
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">HVAC</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Ruta segregada para inspeccion tecnica, revision y cierre GxP.
+            </p>
+          </article>
+          <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Aislamiento
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">Por rol</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Tecnico, Supervisor, Calidad y Gerencia cargan allow-lists independientes.
+            </p>
+          </article>
+          <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Historial
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">Cerrado</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Solo registros aprobados o pendientes de gerencia en la ruta dedicada.
+            </p>
+          </article>
+        </section>
       </section>
     </main>
   );

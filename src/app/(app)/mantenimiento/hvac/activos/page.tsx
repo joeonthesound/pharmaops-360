@@ -28,10 +28,12 @@ type MaintenanceStatus =
   | 'rejected'
   | 'approved'
   | 'Draft'
+  | 'DRAFT'
   | 'PENDING_TECHNICIAN'
   | 'PENDING_SUPERVISOR'
   | 'PENDING_QUALITY'
   | 'PENDING_MANAGEMENT'
+  | 'RECHAZADO_TECNICO'
   | 'APPROVED'
   | 'Pending_Supervisor'
   | 'Pending_Quality'
@@ -74,10 +76,12 @@ const orderStatusClasses: Record<MantenimientoRegistro['status'], string> = {
   rejected: 'border-red-200 bg-red-50 text-red-800',
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   Draft: 'border-slate-200 bg-slate-100 text-slate-700',
+  DRAFT: 'border-slate-200 bg-slate-100 text-slate-700',
   PENDING_TECHNICIAN: 'border-indigo-200 bg-indigo-50 text-indigo-800',
   PENDING_SUPERVISOR: 'border-amber-200 bg-amber-50 text-amber-800',
   PENDING_QUALITY: 'border-sky-200 bg-sky-50 text-sky-800',
   PENDING_MANAGEMENT: 'border-purple-200 bg-purple-50 text-purple-800',
+  RECHAZADO_TECNICO: 'border-red-200 bg-red-50 text-red-800',
   APPROVED: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   Pending_Supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
   Pending_Quality: 'border-sky-200 bg-sky-50 text-sky-800',
@@ -101,10 +105,12 @@ const orderStatusLabel: Record<MantenimientoRegistro['status'], string> = {
   rejected: 'Rechazado',
   approved: 'Aprobado',
   Draft: 'Borrador',
+  DRAFT: 'Borrador',
   PENDING_TECHNICIAN: 'Pendiente Tecnico',
   PENDING_SUPERVISOR: 'Pendiente Supervisor',
   PENDING_QUALITY: 'Pendiente Calidad',
   PENDING_MANAGEMENT: 'Pendiente Gerencia',
+  RECHAZADO_TECNICO: 'Rechazado Tecnico',
   APPROVED: 'Aprobado',
   Pending_Supervisor: 'Pendiente Supervisor',
   Pending_Quality: 'Pendiente Calidad',
@@ -143,27 +149,16 @@ const tabs: Array<{ href: string; label: string; value: DashboardView }> = [
 ];
 
 const SENT_STATUSES: Array<MantenimientoRegistro['status']> = [
-  'pending_supervisor',
-  'pending_quality',
   'PENDING_SUPERVISOR',
   'PENDING_QUALITY',
   'PENDING_MANAGEMENT',
-  'Pending_Supervisor',
-  'Pending_Quality',
-  'Pendiente_Supervisor',
-  'Pendiente_Calidad',
 ];
 const PENDING_STATUSES: Array<MantenimientoRegistro['status']> = [
-  'draft',
-  'pending_technician',
+  'DRAFT',
   'PENDING_TECHNICIAN',
-  'Draft',
-  'Borrador',
 ];
 const REJECTED_STATUSES: Array<MantenimientoRegistro['status']> = [
-  'rejected',
-  'Rejected',
-  'Rechazado',
+  'RECHAZADO_TECNICO',
 ];
 const ACTIVE_WORKFLOW_STATUSES: Array<MantenimientoRegistro['status']> = [
   ...PENDING_STATUSES,
@@ -182,6 +177,7 @@ const HISTORY_STATUSES = [
   'PENDING_MANAGEMENT',
 ] as const satisfies ReadonlyArray<MantenimientoRegistro['status']>;
 const CLOSED_STATUS_FILTER = `(${CLOSED_WORKFLOW_STATUSES.map((status) => `"${status}"`).join(',')})`;
+type DashboardRoleScope = 'technician' | 'supervisor' | 'quality' | 'management';
 
 function formatLocation(activo: Activo | null | undefined) {
   if (!activo) {
@@ -218,6 +214,77 @@ function isGlobalDashboardRole(role: string | null | undefined) {
 
 function isGlobalDashboardEmail(email: string | null | undefined) {
   return String(email ?? '').trim().toLowerCase() === 'gerencia@exagonlabs.com';
+}
+
+function normalizeRoleValue(role: string | null | undefined) {
+  return String(role ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function resolveDashboardRoleScope(
+  role: string | null | undefined,
+  email: string | null | undefined,
+): DashboardRoleScope {
+  if (isGlobalDashboardEmail(email) || isGlobalDashboardRole(role)) {
+    return 'management';
+  }
+
+  const normalizedRole = normalizeRoleValue(role);
+
+  if (normalizedRole === 'supervisor') {
+    return 'supervisor';
+  }
+
+  if (
+    normalizedRole === 'calidad' ||
+    normalizedRole === 'qa' ||
+    normalizedRole === 'quality' ||
+    normalizedRole === 'auditor'
+  ) {
+    return 'quality';
+  }
+
+  return 'technician';
+}
+
+function resolvePendingStatusesForRole(
+  roleScope: DashboardRoleScope,
+): Array<MantenimientoRegistro['status']> {
+  if (roleScope === 'supervisor') {
+    return ['PENDING_SUPERVISOR'];
+  }
+
+  if (roleScope === 'quality') {
+    return ['PENDING_QUALITY'];
+  }
+
+  if (roleScope === 'management') {
+    return ['PENDING_MANAGEMENT'];
+  }
+
+  return PENDING_STATUSES;
+}
+
+function resolveStatusesForView(
+  view: DashboardView,
+  roleScope: DashboardRoleScope,
+): Array<MantenimientoRegistro['status']> {
+  if (view === 'history') {
+    return [...HISTORY_STATUSES];
+  }
+
+  if (view === 'sent') {
+    return SENT_STATUSES;
+  }
+
+  if (view === 'rejected') {
+    return REJECTED_STATUSES;
+  }
+
+  return resolvePendingStatusesForRole(roleScope);
 }
 
 function calculateDaysRemaining(targetDate: string | null | undefined) {
@@ -353,11 +420,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         .eq('active', true)
         .maybeSingle()
     : { data: null };
-  const isGlobalDashboardUser = isGlobalDashboardRole(
-    (usuarioData as { role?: string | null } | null)?.role,
-  ) || isGlobalDashboardEmail(technicianEmail);
+  const role = (usuarioData as { role?: string | null } | null)?.role;
+  const roleScope = resolveDashboardRoleScope(role, technicianEmail);
+  const visiblePendingStatuses = resolvePendingStatusesForRole(roleScope);
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const currentView = normalizeView(resolvedSearchParams.view);
+  const statusesForView = resolveStatusesForView(currentView, roleScope);
   const historySearchTerm = String(resolvedSearchParams.q ?? '');
   const selectedHistoryAsset = String(resolvedSearchParams.asset ?? '');
   const showOnlyDeviations = resolvedSearchParams.deviations === 'true';
@@ -365,14 +433,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const selectedRiskLevel = resolvedSearchParams.risk === 'high' ? 'high' : 'all';
   let dashboardOrders: DashboardOrder[] = [];
   let queryError: { code?: string; message?: string } | null = null;
-  const effectiveExcludedStatuses =
-    currentView === 'history' ? [] : CLOSED_WORKFLOW_STATUSES;
 
   console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 1 [Llamada a Ordenes Activas]', {
     table: 'mantenimientos_registros',
     select: '*, activos(*)',
-    status: currentView === 'history' ? HISTORY_STATUSES : ACTIVE_WORKFLOW_STATUSES,
-    excludedStatus: effectiveExcludedStatuses,
+    status: statusesForView,
+    roleScope,
     view: currentView,
   });
 
@@ -380,20 +446,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     let registrosQuery = supabase
       .from('mantenimientos_registros')
       .select('*')
+      .in('status', statusesForView)
       .order('executed_at', { ascending: false });
 
-    if (currentView === 'history') {
-      if (!isGlobalDashboardUser) {
-        registrosQuery = registrosQuery.ilike('assigned_technician', technicianEmail ?? '');
-      }
-    } else {
-      registrosQuery = registrosQuery
-            .in('status', ACTIVE_WORKFLOW_STATUSES)
-            .not('status', 'in', CLOSED_STATUS_FILTER);
+    if (roleScope === 'technician') {
+      registrosQuery = registrosQuery.ilike('assigned_technician', technicianEmail ?? '');
+    }
 
-      if (currentView !== 'sent') {
-        registrosQuery = registrosQuery.is('quality_signed_at', null);
-      }
+    if (currentView === 'pending' && roleScope !== 'management') {
+      registrosQuery = registrosQuery.is('quality_signed_at', null);
     }
 
     const { data: rawOrders } = await supabase
@@ -431,7 +492,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       dashboardOrders =
         currentView === 'history'
           ? finalRecords
-          : finalRecords.filter((registro) => !isClosedWorkflowRecord(registro));
+          : finalRecords.filter((registro) => statusesForView.includes(registro.status));
     }
 
     console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 2 [Resultado / Respuesta del Servidor]', {
@@ -465,7 +526,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const pendingOrders = dashboardOrders.filter((registro) =>
-    PENDING_STATUSES.includes(registro.status),
+    visiblePendingStatuses.includes(registro.status),
   );
   const sentOrders = dashboardOrders.filter((registro) =>
     SENT_STATUSES.includes(registro.status),

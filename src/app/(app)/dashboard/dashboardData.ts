@@ -17,17 +17,78 @@ type DashboardSecurityContext =
   | {
       supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
       currentTechId: string;
+      roleScope: DashboardRoleScope;
       userEmail: string;
-      isGlobalDashboardUser: boolean;
       error: null;
     }
   | {
       supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
       currentTechId: string | null;
+      roleScope: DashboardRoleScope;
       userEmail: string | null;
-      isGlobalDashboardUser: false;
       error: string;
     };
+
+type DashboardRoleScope = 'technician' | 'supervisor' | 'quality' | 'management';
+
+function normalizeRoleValue(role: string | null | undefined) {
+  return String(role ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function resolveDashboardRoleScope(role: string | null | undefined): DashboardRoleScope {
+  const normalizedRole = normalizeRoleValue(role);
+
+  if (normalizedRole === 'tecnico' || normalizedRole === 'technician') {
+    return 'technician';
+  }
+
+  if (normalizedRole === 'supervisor') {
+    return 'supervisor';
+  }
+
+  if (
+    normalizedRole === 'calidad' ||
+    normalizedRole === 'qa' ||
+    normalizedRole === 'quality' ||
+    normalizedRole === 'auditor'
+  ) {
+    return 'quality';
+  }
+
+  return 'management';
+}
+
+function resolvePendingStatusesForRole(
+  roleScope: DashboardRoleScope,
+): readonly MaintenanceStatus[] {
+  if (roleScope === 'supervisor') {
+    return ['PENDING_SUPERVISOR'];
+  }
+
+  if (roleScope === 'quality') {
+    return ['PENDING_QUALITY'];
+  }
+
+  if (roleScope === 'management') {
+    return ['PENDING_MANAGEMENT'];
+  }
+
+  return ['DRAFT', 'PENDING_TECHNICIAN'];
+}
+
+function isTechnicalPendingStatusQuery(statuses: readonly MaintenanceStatus[]) {
+  const normalizedStatuses = [...statuses].sort();
+
+  return (
+    normalizedStatuses.length === 2 &&
+    normalizedStatuses[0] === 'DRAFT' &&
+    normalizedStatuses[1] === 'PENDING_TECHNICIAN'
+  );
+}
 
 function isGlobalDashboardRole(role: string | null | undefined) {
   const normalizedRole = String(role ?? '').trim().toLowerCase();
@@ -59,8 +120,8 @@ async function resolveDashboardSecurityContext(): Promise<DashboardSecurityConte
     return {
       supabase: supabaseServer,
       currentTechId,
+      roleScope: 'technician',
       userEmail,
-      isGlobalDashboardUser: false,
       error: userError?.message ?? 'Sesion tecnica no disponible.',
     };
   }
@@ -71,14 +132,15 @@ async function resolveDashboardSecurityContext(): Promise<DashboardSecurityConte
     .eq('user_email', userEmail)
     .eq('active', true)
     .maybeSingle();
+  const role = (usuario as { role?: string | null } | null)?.role;
 
   return {
     supabase: supabaseServer,
     currentTechId,
+    roleScope: isGlobalDashboardEmail(userEmail) || isGlobalDashboardRole(role)
+      ? 'management'
+      : resolveDashboardRoleScope(role),
     userEmail,
-    isGlobalDashboardUser:
-      isGlobalDashboardEmail(userEmail) ||
-      isGlobalDashboardRole((usuario as { role?: string | null } | null)?.role),
     error: null,
   };
 }
@@ -136,17 +198,21 @@ export async function fetchDashboardOrdersByStatuses(
       return { data: [], error: securityContext.error };
     }
 
+    const effectiveStatuses = isTechnicalPendingStatusQuery(statuses)
+      ? resolvePendingStatusesForRole(securityContext.roleScope)
+      : statuses;
+
     let registrosQuery = securityContext.supabase
       .from('mantenimientos_registros')
       .select('*')
-      .in('status', [...statuses])
+      .in('status', [...effectiveStatuses])
       .order('executed_at', { ascending: false });
 
     if (options.openOnly) {
       registrosQuery = registrosQuery.is('quality_signed_at', null);
     }
 
-    if (!securityContext.isGlobalDashboardUser) {
+    if (securityContext.roleScope === 'technician') {
       registrosQuery = registrosQuery.ilike(
         'assigned_technician',
         securityContext.userEmail ?? '',
@@ -194,9 +260,10 @@ export async function fetchTechnicalHistoryOrders(): Promise<TechnicalHistoryQue
     let registrosQuery = securityContext.supabase
       .from('mantenimientos_registros')
       .select('*')
+      .in('status', [...TECHNICAL_HISTORY_STATUSES])
       .order('executed_at', { ascending: false });
 
-    if (!securityContext.isGlobalDashboardUser) {
+    if (securityContext.roleScope === 'technician') {
       registrosQuery = registrosQuery.ilike(
         'assigned_technician',
         securityContext.userEmail ?? '',
