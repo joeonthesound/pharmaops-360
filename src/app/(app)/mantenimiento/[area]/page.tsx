@@ -4,7 +4,7 @@ import type { Activo } from '@/modules/activos/activos.interface';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { ChecklistForm } from './checklist-form';
 import { CopyRuiButton } from './copy-rui-button';
-import { EvidencePhotoGallery } from './evidence-photo-gallery';
+import { EvidencePhotoGallery, type EvidencePhoto } from './evidence-photo-gallery';
 import { PrintReportButton } from './print-report-button';
 import { SignatureReviewCard } from './signature-review-card';
 
@@ -505,6 +505,18 @@ function formatDateTimeUtc(value: string | null | undefined) {
 }
 
 function formatResponseValue(respuesta: RespuestaAuditada) {
+  if (isNonApplicableEvidenceValue(respuesta.valor_seleccion)) {
+    return 'No aplica';
+  }
+
+  if (isNonApplicableEvidenceValue(respuesta.valor_texto)) {
+    return 'No aplica';
+  }
+
+  if (isEvidenceValue(respuesta)) {
+    return 'Evidencia fotografica adjunta';
+  }
+
   if (respuesta.valor_seleccion) {
     return respuesta.valor_seleccion;
   }
@@ -522,6 +534,14 @@ function formatResponseValue(respuesta: RespuestaAuditada) {
   }
 
   return 'Sin valor registrado';
+}
+
+function shouldRenderInlineTextValue(respuesta: RespuestaAuditada) {
+  return (
+    Boolean(respuesta.valor_texto) &&
+    !isEvidenceValue(respuesta) &&
+    !isNonApplicableEvidenceValue(respuesta.valor_texto)
+  );
 }
 
 function buildOrderedResponses(
@@ -582,12 +602,15 @@ function hasAnyValue(respuesta: RespuestaAuditada) {
 function isEvidenceValue(respuesta: RespuestaAuditada) {
   const fieldType = String(respuesta.field_type ?? '').toLowerCase();
   const textValue = respuesta.valor_texto ?? '';
+  const selectionValue = respuesta.valor_seleccion ?? '';
 
   return (
     fieldType === 'evidence' ||
     fieldType === 'file' ||
     /^https?:\/\//i.test(textValue) ||
-    textValue.includes('evidencias-mantenimiento/')
+    /^https?:\/\//i.test(selectionValue) ||
+    textValue.includes('evidencias-mantenimiento/') ||
+    selectionValue.includes('evidencias-mantenimiento/')
   );
 }
 
@@ -599,13 +622,6 @@ function isOutOfRangeResponse(respuesta: RespuestaAuditada) {
     serializedText.includes('"is_out_of_range": true') ||
     serializedText.includes('fuera de rango')
   );
-}
-
-function getEvidenceLabel(value: string) {
-  const normalized = value.split('?')[0] ?? value;
-  const parts = normalized.split('/').filter(Boolean);
-
-  return parts.at(-1) ?? value;
 }
 
 function parseEvidenceJson(value: string) {
@@ -683,16 +699,19 @@ function normalizeEvidenceUrl(value: string, getPublicUrl: (path: string) => str
   return getPublicUrl(normalizedPath);
 }
 
-function extractEvidenceImageUrls(
+function extractEvidencePhotos(
   respuestas: RespuestaAuditada[],
   getPublicUrl: (path: string) => string,
 ) {
-  const imageUrls = respuestas.flatMap((respuesta) => {
+  const photos = respuestas.flatMap((respuesta) => {
     const fieldType = String(respuesta.field_type ?? '').toLowerCase();
     const isEvidenceField =
       respuesta.field_key === VIRTUAL_EVIDENCE_FIELD_KEY ||
       ['evidence', 'file', 'image', 'attachment'].includes(fieldType) ||
-      Boolean(respuesta.valor_texto?.includes(EVIDENCE_BUCKET));
+      Boolean(respuesta.valor_texto?.includes(EVIDENCE_BUCKET)) ||
+      Boolean(respuesta.valor_seleccion?.includes(EVIDENCE_BUCKET)) ||
+      /^https?:\/\//i.test(respuesta.valor_texto ?? '') ||
+      /^https?:\/\//i.test(respuesta.valor_seleccion ?? '');
 
     if (!isEvidenceField) {
       return [];
@@ -702,12 +721,29 @@ function extractEvidenceImageUrls(
       return [];
     }
 
-    return extractEvidenceValues(respuesta.valor_texto)
+    const evidenceValues = [
+      ...extractEvidenceValues(respuesta.valor_texto),
+      ...extractEvidenceValues(respuesta.valor_seleccion),
+    ];
+
+    return evidenceValues
       .map((value) => normalizeEvidenceUrl(value, getPublicUrl))
-      .filter((value): value is string => Boolean(value));
+      .filter((value): value is string => Boolean(value))
+      .map((publicUrl) => ({
+        fieldLabel: respuesta.field_label,
+        publicUrl,
+      }));
   });
 
-  return Array.from(new Set(imageUrls));
+  const photosByUrl = new Map<string, EvidencePhoto>();
+
+  photos.forEach((photo) => {
+    if (!photosByUrl.has(photo.publicUrl)) {
+      photosByUrl.set(photo.publicUrl, photo);
+    }
+  });
+
+  return Array.from(photosByUrl.values());
 }
 
 async function insertChecklistAuditEvent({
@@ -1449,7 +1485,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   const isEditableDocument = normalizedStatus === 'draft' || normalizedStatus === 'rejected';
   const isReadOnlyDocument = !isEditableDocument;
   const editableInitialResponses = buildEditableFieldResponses(orderedResponses);
-  const evidenceImageUrls = extractEvidenceImageUrls(orderedResponses, (path) => {
+  const evidencePhotos = extractEvidencePhotos(orderedResponses, (path) => {
     return supabase.storage.from(EVIDENCE_BUCKET).getPublicUrl(path).data.publicUrl;
   });
   const isAdministrativeAuthority = isAdministrativeAuthorityRole(usuario?.role);
@@ -1624,13 +1660,6 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
 
           <section className="mt-3">
             <h2 className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-black">
-              Evidencias fotograficas
-            </h2>
-            <EvidencePhotoGallery imageUrls={evidenceImageUrls} />
-          </section>
-
-          <section className="mt-3">
-            <h2 className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-black">
               Datos completos del checklist
             </h2>
             <table className="table-auto w-full border-collapse text-left text-[9px] leading-tight">
@@ -1660,7 +1689,9 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                           responseValue
                         )}
                       </td>
-                      <td className="px-1.5 py-1 font-semibold text-black">{respuesta.unit ?? 'N/A'}</td>
+                      <td className="px-1.5 py-1 font-semibold text-black">
+                        {respuesta.unit ?? 'No aplica'}
+                      </td>
                       <td className="px-1.5 py-1 text-slate-700">{respuesta.section_name}</td>
                     </tr>
                   );
@@ -1670,6 +1701,13 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
             <p className="mt-1 text-[8px] font-semibold text-black">
               * Valor marcado como fuera de rango o con desviacion tecnica documentada.
             </p>
+          </section>
+
+          <section className="mt-4">
+            <h2 className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-black">
+              Evidencias fotograficas
+            </h2>
+            <EvidencePhotoGallery images={evidencePhotos} />
           </section>
 
           <section className="mt-4 grid gap-2 text-[9px] leading-tight">
@@ -1802,23 +1840,6 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
               </div>
             </section>
 
-            <section className="shrink-0 rounded border border-slate-200 bg-white p-3 shadow-sm">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">
-                    Evidencias fotograficas
-                  </h2>
-                  <p className="text-xs font-semibold text-slate-500">
-                    Adjuntos capturados durante la inspeccion RUI.
-                  </p>
-                </div>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">
-                  {evidenceImageUrls.length} archivo(s)
-                </span>
-              </div>
-              <EvidencePhotoGallery imageUrls={evidenceImageUrls} />
-            </section>
-
             <section className="overflow-x-auto bg-white rounded border border-slate-200">
               <table className="w-full border-collapse text-left text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-600">
@@ -1852,7 +1873,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                           </span>
                         </td>
                         <td className="px-3 py-2 font-semibold text-slate-600">
-                          {respuesta.unit ?? 'N/A'}
+                          {respuesta.unit ?? 'No aplica'}
                         </td>
                         <td className="px-3 py-2 font-medium text-slate-500">
                           {respuesta.section_name}
@@ -1862,6 +1883,23 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                   })}
                 </tbody>
               </table>
+            </section>
+
+            <section className="rounded border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">
+                    Evidencias Fotograficas
+                  </h2>
+                  <p className="text-xs font-semibold text-slate-500">
+                    Adjuntos validos capturados durante la inspeccion RUI.
+                  </p>
+                </div>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">
+                  {evidencePhotos.length} archivo(s)
+                </span>
+              </div>
+              <EvidencePhotoGallery images={evidencePhotos} />
             </section>
           </div>
 
@@ -2177,7 +2215,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
 
                             {respuesta.valor_seleccion ? (
                               <span className="mt-3 inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-800 print:border-slate-500 print:text-black">
-                                {respuesta.valor_seleccion}
+                                {responseValue}
                               </span>
                             ) : null}
 
@@ -2194,20 +2232,15 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                             ) : null}
 
                             {respuesta.valor_texto ? (
-                              isEvidenceValue(respuesta) ? (
-                                <a
-                                  className="mt-3 block break-all text-sm font-semibold text-sky-700 underline print:text-black"
-                                  href={respuesta.valor_texto}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                >
-                                  {getEvidenceLabel(respuesta.valor_texto)}
-                                </a>
-                              ) : (
-                                <p className="mt-3 whitespace-pre-wrap break-words text-sm font-medium text-slate-700 print:text-black">
-                                  {respuesta.valor_texto}
-                                </p>
-                              )
+                              shouldRenderInlineTextValue(respuesta) ? (
+                                  <p className="mt-3 whitespace-pre-wrap break-words text-sm font-medium text-slate-700 print:text-black">
+                                    {respuesta.valor_texto}
+                                  </p>
+                                ) : (
+                                  <span className="mt-3 inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-800 print:border-slate-500 print:text-black">
+                                    {responseValue}
+                                  </span>
+                                )
                             ) : null}
 
                             {!hasValue ? (
@@ -2222,6 +2255,21 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                   </section>
                 ))}
               </div>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm print:hidden">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold tracking-normal">Evidencias Fotograficas</h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Fotografias validas separadas de los campos tecnicos para revision visual.
+                  </p>
+                </div>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">
+                  {evidencePhotos.length} archivo(s)
+                </span>
+              </div>
+              <EvidencePhotoGallery images={evidencePhotos} />
             </section>
 
             <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm print:hidden">
