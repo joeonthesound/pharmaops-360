@@ -93,6 +93,22 @@ function isManagementRole(role: string) {
   ].includes(normalizedRole);
 }
 
+function isAdministrativeAuthority(role: string) {
+  return normalizeRoleValue(role) === 'administrativo';
+}
+
+function isSupervisorRole(role: string) {
+  const normalizedRole = normalizeRoleValue(role);
+
+  return normalizedRole === 'supervisor';
+}
+
+function isQualityRole(role: string) {
+  const normalizedRole = normalizeRoleValue(role);
+
+  return ['calidad', 'qa', 'quality', 'quality assurance'].includes(normalizedRole);
+}
+
 export function ApprovalActionsPanel({
   canApprove,
   canManage,
@@ -107,14 +123,19 @@ export function ApprovalActionsPanel({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const activeBlock = useMemo(() => resolveActiveBlock(status), [status]);
+  const isAdminAuthority = isAdministrativeAuthority(userRole);
+  const canSignSupervisor = isSupervisorRole(userRole) || isAdminAuthority || canReview;
+  const canSignQuality = isQualityRole(userRole) || isAdminAuthority || canApprove;
   const canSignManagement =
-    isManagementRole(userRole) || (canApprove === true && canReview === true);
+    isManagementRole(userRole) ||
+    isAdminAuthority ||
+    (canApprove === true && canReview === true);
 
   const hasPermission =
     activeBlock?.signingRole === 'supervisor'
-      ? canReview
+      ? canSignSupervisor
       : activeBlock?.signingRole === 'quality'
-        ? canApprove
+        ? canSignQuality
         : activeBlock?.signingRole === 'management'
           ? canManage || canSignManagement
           : false;

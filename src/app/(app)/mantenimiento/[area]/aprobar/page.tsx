@@ -551,6 +551,23 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
               <article className="rounded-md border border-slate-200 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
+                    <p className="text-sm font-semibold text-slate-950">Tecnico</p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {registro?.assigned_technician ?? 'Tecnico no registrado'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatDateTime(registro?.executed_at ?? null)}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                    Ejecutado
+                  </span>
+                </div>
+              </article>
+
+              <article className="rounded-md border border-slate-200 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
                     <p className="text-sm font-semibold text-slate-950">Supervisor</p>
                     <p className="mt-1 text-xs text-slate-600">
                       {registro?.supervisor_signed_by ?? 'Pendiente de firma'}
