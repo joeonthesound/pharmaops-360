@@ -3,8 +3,7 @@
 import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
-
-const ENABLE_SUPERADMIN_DEBUG_LOGS = false;
+import { ENABLE_SUPERADMIN_DEBUG_LOGS } from './debug';
 
 export type MaintenanceSigningRole = 'supervisor' | 'quality' | 'management';
 export type MaintenanceSigningAction = 'approve' | 'reject';
@@ -91,6 +90,26 @@ type DirectedRejectionResult = {
   ok: boolean;
   message: string;
   nextStatus?: DirectedRejectionReturnStage;
+  debug?: {
+    stage: string;
+    code?: string;
+    details?: unknown;
+  };
+};
+
+export type AuditTrailLifecycleRow = {
+  accion: string | null;
+  comentarios: string | null;
+  entity: string | null;
+  entity_uuid: string | null;
+  timestamp: string | null;
+  usuario: string | null;
+};
+
+export type FetchAuditTrailLifecycleResult = {
+  ok: boolean;
+  rows?: AuditTrailLifecycleRow[];
+  message?: string;
   debug?: {
     stage: string;
     code?: string;
@@ -1200,5 +1219,76 @@ export async function rejectMaintenanceWithDeviationAction(
     ok: true,
     message: 'Registro retornado con desvio auditado.',
     nextStatus: returnStage,
+  };
+}
+
+export async function fetchAuditTrailLifecycleAction(
+  targetUuid: string,
+): Promise<FetchAuditTrailLifecycleResult> {
+  await cookies();
+
+  const normalizedTargetUuid = String(targetUuid ?? '').trim();
+
+  if (ENABLE_SUPERADMIN_DEBUG_LOGS) {
+    console.log('[SERVER AUDIT DATA FETCH]', {
+      entity_uuid: normalizedTargetUuid,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  if (!UUID_PATTERN.test(normalizedTargetUuid)) {
+    return {
+      ok: false,
+      message: 'UUID de registro de auditoria invalido.',
+      debug: {
+        stage: 'input_validation',
+        code: 'invalid_entity_uuid',
+      },
+    };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('audit_trail')
+    .select('entity, entity_uuid, accion, usuario, timestamp, comentarios')
+    .eq('entity_uuid', normalizedTargetUuid)
+    .order('timestamp', { ascending: true });
+
+  if (error) {
+    if (ENABLE_SUPERADMIN_DEBUG_LOGS) {
+      console.error('[SERVER AUDIT DATA FETCH ERROR]', {
+        entity_uuid: normalizedTargetUuid,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    return {
+      ok: false,
+      message:
+        'Error de comunicación con el servidor GxP. No se pudo verificar la integridad del ciclo de vida.',
+      debug: {
+        stage: 'audit_trail_select',
+        code: error.code,
+        details: error,
+      },
+    };
+  }
+
+  const rows = (data ?? []) as AuditTrailLifecycleRow[];
+
+  if (ENABLE_SUPERADMIN_DEBUG_LOGS) {
+    console.log('[SERVER AUDIT DATA FETCH RESULT]', {
+      entity_uuid: normalizedTargetUuid,
+      rowCount: rows.length,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  return {
+    ok: true,
+    rows,
   };
 }
