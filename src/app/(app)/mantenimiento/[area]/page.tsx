@@ -2,6 +2,10 @@ import Link from 'next/link';
 import { ExternalLink, Lock, QrCode } from 'lucide-react';
 import type { Activo } from '@/modules/activos/activos.interface';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
+import {
+  AuditLifecycleSheet,
+  type AuditTrailRow,
+} from '@/modules/mantenimiento/components/audit-lifecycle-sheet';
 import { ChecklistForm } from './checklist-form';
 import { CopyRuiButton } from './copy-rui-button';
 import { EvidencePhotoGallery, type EvidencePhoto } from './evidence-photo-gallery';
@@ -1497,6 +1501,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
     { data: camposData, error: camposLookupError },
     { data: respuestasData },
     { data: usuarioData },
+    { data: auditTrailData },
   ] = await Promise.all([
     supabase
       .from('formularios_campos')
@@ -1518,11 +1523,20 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
           .eq('active', true)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    maintenanceRecord?.uuid
+      ? supabase
+          .from('audit_trail')
+          .select('entity, entity_uuid, accion, usuario, timestamp, comentarios')
+          .eq('entity', 'mantenimientos_registros')
+          .eq('entity_uuid', maintenanceRecord.uuid)
+          .order('timestamp', { ascending: true })
+      : Promise.resolve({ data: [] }),
   ]);
 
   const campos = (camposData ?? []) as FormularioCampo[];
   const respuestas = (respuestasData ?? []) as FormularioRespuestaLectura[];
   const usuario = usuarioData as UsuarioPermisos | null;
+  const auditTrailRows = (auditTrailData ?? []) as AuditTrailRow[];
   const orderedResponses = buildOrderedResponses(respuestas, campos);
   const responsesBySection = groupAuditResponsesBySection(orderedResponses);
   const notes = parseRecordNotes(maintenanceRecord?.notes ?? null);
@@ -1889,6 +1903,12 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         </section>
 
         <div className="sticky top-0 z-20 mx-auto max-w-7xl bg-background/95 px-4 pt-6 pb-3 backdrop-blur print:hidden">
+          <div className="mb-3 flex justify-end">
+            <AuditLifecycleSheet
+              auditRows={auditTrailRows}
+              recordUuid={maintenanceRecord?.uuid ?? null}
+            />
+          </div>
           <ApprovalTimelineGraphic
             isManagementSigned={Boolean(maintenanceRecord?.management_signed_at)}
             status={normalizedStatus}
@@ -2146,6 +2166,12 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         </header>
 
         <div className="print:hidden">
+          <div className="mb-3 flex justify-end">
+            <AuditLifecycleSheet
+              auditRows={auditTrailRows}
+              recordUuid={maintenanceRecord?.uuid ?? null}
+            />
+          </div>
           <ApprovalTimelineGraphic
             isManagementSigned={Boolean(maintenanceRecord?.management_signed_at)}
             status={normalizedStatus}
