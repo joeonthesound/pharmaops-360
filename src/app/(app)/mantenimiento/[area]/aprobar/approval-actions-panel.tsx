@@ -124,12 +124,11 @@ export function ApprovalActionsPanel({
   const [isPending, startTransition] = useTransition();
   const activeBlock = useMemo(() => resolveActiveBlock(status), [status]);
   const isAdminAuthority = isAdministrativeAuthority(userRole);
-  const canSignSupervisor = isSupervisorRole(userRole) || isAdminAuthority || canReview;
-  const canSignQuality = isQualityRole(userRole) || isAdminAuthority || canApprove;
-  const canSignManagement =
-    isManagementRole(userRole) ||
-    isAdminAuthority ||
-    (canApprove === true && canReview === true);
+  const canSignSupervisor = isAdminAuthority ? true : isSupervisorRole(userRole) || canReview;
+  const canSignQuality = isAdminAuthority ? true : isQualityRole(userRole) || canApprove;
+  const canSignManagement = isAdminAuthority
+    ? true
+    : isManagementRole(userRole) || (canApprove === true && canReview === true);
 
   const hasPermission =
     activeBlock?.signingRole === 'supervisor'

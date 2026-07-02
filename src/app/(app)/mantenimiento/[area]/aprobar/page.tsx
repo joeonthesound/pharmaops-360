@@ -155,6 +155,20 @@ function formatDateTime(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatSignerText(value: string | null | undefined, fallback: string) {
+  const signer = String(value ?? '').trim();
+
+  if (!signer) {
+    return fallback;
+  }
+
+  if (signer.includes('initial_layout') || signer.startsWith('{') || signer.startsWith('[')) {
+    return fallback;
+  }
+
+  return signer;
+}
+
 function getOutOfRangeCount(respuestas: FormularioRespuesta[]) {
   return respuestas.filter((respuesta) => respuesta.valor_numerico !== null).length;
 }
@@ -387,7 +401,7 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
   const canManage = usuario?.can_manage_users === true;
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950">
+    <main className="min-h-screen w-full overflow-y-auto bg-background px-4 py-5 text-slate-950">
       <section className="mx-auto grid w-full max-w-6xl gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="grid gap-5">
           <header className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -542,7 +556,7 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
           </section>
         </div>
 
-        <aside className="grid gap-5 lg:sticky lg:top-5 lg:self-start">
+        <aside className="grid gap-5 self-start">
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-base font-semibold tracking-normal">
               Historial de firmas electronicas
@@ -553,7 +567,7 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
                   <div>
                     <p className="text-sm font-semibold text-slate-950">Tecnico</p>
                     <p className="mt-1 text-xs text-slate-600">
-                      {registro?.assigned_technician ?? 'Tecnico no registrado'}
+                      {formatSignerText(registro?.assigned_technician, 'Tecnico no registrado')}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
                       {formatDateTime(registro?.executed_at ?? null)}

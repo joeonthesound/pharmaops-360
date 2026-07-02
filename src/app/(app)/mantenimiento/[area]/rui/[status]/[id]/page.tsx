@@ -41,6 +41,19 @@ type NormalizedImagePayload = {
 };
 
 const EVIDENCE_BUCKET = 'evidencias-mantenimiento';
+const ENABLE_SUPERADMIN_DEBUG_LOGS = false;
+
+function isNonApplicableEvidenceValue(value: string | null | undefined) {
+  const normalizedValue = String(value ?? '').trim().toLowerCase();
+
+  return (
+    normalizedValue === 'n/a' ||
+    normalizedValue === 'na' ||
+    normalizedValue === 'no aplica' ||
+    normalizedValue === 'no_aplica' ||
+    normalizedValue === 'not applicable'
+  );
+}
 
 function parseJsonSafely(value: string) {
   try {
@@ -53,7 +66,7 @@ function parseJsonSafely(value: string) {
 function normalizeStoragePath(value: string) {
   const trimmedValue = value.trim();
 
-  if (!trimmedValue) {
+  if (!trimmedValue || isNonApplicableEvidenceValue(trimmedValue)) {
     return null;
   }
 
@@ -78,7 +91,7 @@ function normalizeStoragePath(value: string) {
 }
 
 function extractImageValues(rawValue: string | null) {
-  if (!rawValue) {
+  if (!rawValue || isNonApplicableEvidenceValue(rawValue)) {
     return [];
   }
 
@@ -89,6 +102,10 @@ function extractImageValues(rawValue: string | null) {
     return parsedValue
       .flatMap((item) => {
         if (typeof item === 'string') {
+          if (isNonApplicableEvidenceValue(item)) {
+            return [];
+          }
+
           return [item];
         }
 
@@ -101,7 +118,7 @@ function extractImageValues(rawValue: string | null) {
             candidate.url ??
             candidate.publicUrl;
 
-          return typeof path === 'string' ? [path] : [];
+          return typeof path === 'string' && !isNonApplicableEvidenceValue(path) ? [path] : [];
         }
 
         return [];
@@ -118,7 +135,7 @@ function extractImageValues(rawValue: string | null) {
       candidate.url ??
       candidate.publicUrl;
 
-    return typeof path === 'string' ? [path] : [];
+    return typeof path === 'string' && !isNonApplicableEvidenceValue(path) ? [path] : [];
   }
 
   return [trimmedValue];
@@ -204,6 +221,13 @@ async function debugReportImages(reportUuid: string) {
       ...extractImageValues(response.valor_seleccion),
     ];
 
+    if (
+      isNonApplicableEvidenceValue(response.valor_texto) ||
+      isNonApplicableEvidenceValue(response.valor_seleccion)
+    ) {
+      return [];
+    }
+
     if (!isEvidenceField && imageValues.length === 0) {
       return [];
     }
@@ -283,20 +307,42 @@ async function debugReportImages(reportUuid: string) {
 
 export default async function RuiLifecycleRoute({ params }: RuiLifecycleRouteProps) {
   const resolvedParams = await params;
-  await debugReportImages(resolvedParams.id);
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const userEmail = user?.email?.trim().toLowerCase() ?? '';
+  const { data: userProfile } = userEmail
+    ? await supabase
+        .from('usuarios_roles')
+        .select('role')
+        .eq('user_email', userEmail)
+        .eq('active', true)
+        .maybeSingle()
+    : { data: null };
+  const shouldRunDebugLogs =
+    ENABLE_SUPERADMIN_DEBUG_LOGS &&
+    String((userProfile as { role?: string | null } | null)?.role ?? '').trim().toLowerCase() ===
+      'administrativo';
+
+  if (shouldRunDebugLogs) {
+    await debugReportImages(resolvedParams.id);
+  }
 
   return (
-    <>
-      <div className="print:hidden px-4 pb-2">
-        <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
-          {'\u2699\uFE0F Ejecutando Diagnostico de Imagenes en Consola...'}
-        </span>
-      </div>
+    <main className="min-h-screen w-full overflow-y-auto bg-background pb-12">
+      {shouldRunDebugLogs ? (
+        <div className="print:hidden px-4 pb-2">
+          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+            {'\u2699\uFE0F Ejecutando Diagnostico de Imagenes en Consola...'}
+          </span>
+        </div>
+      ) : null}
       {ChecklistInspeccionPage({
         params: Promise.resolve({
           area: resolvedParams.id,
         }),
       })}
-    </>
+    </main>
   );
 }

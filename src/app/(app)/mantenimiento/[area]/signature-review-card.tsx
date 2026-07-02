@@ -83,8 +83,25 @@ function formatDateTimeUtc(value: string | null | undefined) {
 function isActiveStep(status: MaintenanceStatus, signingRole: MaintenanceSigningRole) {
   return (
     (signingRole === 'supervisor' && status === 'pending_supervisor') ||
-    (signingRole === 'quality' && status === 'pending_quality')
+    (signingRole === 'quality' && status === 'pending_quality') ||
+    (signingRole === 'management' && status === 'pending_management')
   );
+}
+
+function resolveReviewLabel(signingRole: MaintenanceSigningRole) {
+  if (signingRole === 'supervisor') {
+    return 'Supervisor';
+  }
+
+  if (signingRole === 'quality') {
+    return 'Calidad';
+  }
+
+  return 'Gerencia';
+}
+
+function resolveApproveLabel(signingRole: MaintenanceSigningRole) {
+  return signingRole === 'management' ? 'Aprobar Cierre' : 'Aprobar Inspeccion';
 }
 
 export function SignatureReviewCard({
@@ -110,9 +127,8 @@ export function SignatureReviewCard({
   const isModalOpen = signatureIntent !== null;
   const requiredCommentLength = signatureIntent === 'reject' ? 15 : 10;
   const canSubmit = comments.trim().length >= requiredCommentLength && !isPending;
-  const reviewLabel = signingRole === 'supervisor' ? 'Supervisor' : 'Calidad';
-  const isAdministrativeConsultation =
-    signingRole === 'supervisor' && currentUserRole.trim().toLowerCase() === 'administrativo';
+  const reviewLabel = resolveReviewLabel(signingRole);
+  const isAdministrativeConsultation = false;
 
   function openSignatureModal(action: MaintenanceSigningAction) {
     setSignatureIntent(action);
@@ -245,7 +261,7 @@ export function SignatureReviewCard({
               onClick={() => openSignatureModal('approve')}
               type="button"
             >
-              Aprobar Inspección
+              {resolveApproveLabel(signingRole)}
             </button>
             <button
               className="h-11 rounded-md border border-red-300 bg-white px-4 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:border-slate-200 disabled:text-slate-300"
@@ -284,7 +300,7 @@ export function SignatureReviewCard({
                 </p>
                 <h2 className="mt-1 text-lg font-black text-slate-950">
                   {signatureIntent === 'approve'
-                    ? `Aprobar inspeccion - ${reviewLabel}`
+                    ? `${resolveApproveLabel(signingRole)} - ${reviewLabel}`
                     : `Rechazar con desvio - ${reviewLabel}`}
                 </h2>
               </div>

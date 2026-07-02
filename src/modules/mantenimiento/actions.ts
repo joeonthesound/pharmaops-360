@@ -178,10 +178,6 @@ function isStrictPendingSupervisorStatus(status: MantenimientoRegistroFirma['sta
   return String(status ?? '').trim() === 'PENDING_SUPERVISOR';
 }
 
-function isAdministrativeConsultationRole(role: string | null | undefined) {
-  return String(role ?? '').trim().toLowerCase() === 'administrativo';
-}
-
 function isSupervisorOrHigherRole(role: string | null | undefined) {
   const normalizedRole = String(role ?? '').trim().toLowerCase();
 
@@ -225,6 +221,7 @@ function hasApproveCapability(canApprove: UsuarioRolPermisos['can_approve']) {
 function canApproveAsQuality(permisos: UsuarioRolPermisos) {
   const normalizedRole = normalizeRoleValue(permisos.role);
   const isQA =
+    normalizedRole === 'administrativo' ||
     normalizedRole === 'calidad' ||
     normalizedRole === 'quality' ||
     isQualityAssuranceRole(permisos.role) ||
@@ -316,12 +313,13 @@ function resolveApprovedStatus(signingRole: MaintenanceSigningRole): Maintenance
 }
 
 function canReviewAsSupervisorOrHigher(permisos: UsuarioRolPermisos) {
-  const normalizedRole = String(permisos.role ?? '').trim().toLowerCase();
+  const normalizedRole = normalizeRoleValue(permisos.role);
 
   return (
     permisos.can_review === true ||
     [
       'supervisor',
+      'administrativo',
       'calidad',
       'administrador',
       'superadmin',
@@ -650,22 +648,6 @@ export async function signMaintenanceRecordAction(
     };
   }
 
-  if (
-    signingRole === 'supervisor' &&
-    isStrictPendingSupervisorStatus(maintenanceRecord.status) &&
-    isAdministrativeConsultationRole(permisos.role)
-  ) {
-    return {
-      ok: false,
-      message: 'Perfil Administrativo autorizado solo para consulta en supervision operativa.',
-      debug: {
-        stage: 'rbac_validation',
-        code: 'administrative_read_only_profile',
-        details: { signerEmail, role: permisos.role },
-      },
-    };
-  }
-
   if (!canSignCurrentStep(signingRole, maintenanceRecord.status)) {
     return {
       ok: false,
@@ -840,7 +822,7 @@ export async function rejectMaintenanceWithDeviationAction(
 
   const { data: usuario, error: usuarioError } = await supabase
     .from('usuarios_roles')
-    .select('user_email, active, role, can_review, can_approve')
+    .select('user_email, active, role, can_review, can_approve, can_manage_users')
     .eq('user_email', supervisorEmail)
     .eq('active', true)
     .maybeSingle();
@@ -858,7 +840,7 @@ export async function rejectMaintenanceWithDeviationAction(
 
   const permisos = usuario as UsuarioRolPermisos;
 
-  if (!canReviewAsSupervisorOrHigher(permisos) || isAdministrativeConsultationRole(permisos.role)) {
+  if (!canReviewAsSupervisorOrHigher(permisos)) {
     return {
       ok: false,
       message: 'Usuario sin perfil Supervisor o superior para rechazo con desvio.',

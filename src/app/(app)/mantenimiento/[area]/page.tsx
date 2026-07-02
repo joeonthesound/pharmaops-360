@@ -8,6 +8,8 @@ import { EvidencePhotoGallery } from './evidence-photo-gallery';
 import { PrintReportButton } from './print-report-button';
 import { SignatureReviewCard } from './signature-review-card';
 
+const ENABLE_SUPERADMIN_DEBUG_LOGS = false;
+
 type ActivoConUuid = Activo & {
   uuid: string;
 };
@@ -73,6 +75,7 @@ type MantenimientoRegistroResumen = {
   id: number;
   uuid: string;
   record_code: string | null;
+  asset_code: string | null;
   status: MaintenanceStatus | string | null;
   rejection_comments: string | null;
   assigned_technician: string | null;
@@ -82,6 +85,12 @@ type MantenimientoRegistroResumen = {
   supervisor_signed_at: string | null;
   quality_signed_by: string | null;
   quality_signed_at: string | null;
+  management_signed_by: string | null;
+  management_signed_at: string | null;
+};
+
+type MantenimientoRegistroConActivo = MantenimientoRegistroResumen & {
+  activos?: ActivoConUuid | ActivoConUuid[] | null;
 };
 
 type ChecklistSubmitResult = {
@@ -96,6 +105,7 @@ type UsuarioPermisos = {
   role: string | null;
   can_review: boolean | null;
   can_approve: boolean | null;
+  can_manage_users?: boolean | null;
 };
 
 type FormularioRespuestaLectura = {
@@ -301,8 +311,72 @@ function isAdministrativeConsultationRole(role: string | null | undefined) {
   return String(role ?? '').trim().toLowerCase() === 'administrativo';
 }
 
+function normalizeRoleValue(role: string | null | undefined) {
+  return String(role ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function isAdministrativeAuthorityRole(role: string | null | undefined) {
+  return normalizeRoleValue(role) === 'administrativo';
+}
+
+function isQualityAuthorityRole(role: string | null | undefined) {
+  return ['calidad', 'qa', 'quality', 'quality assurance'].includes(normalizeRoleValue(role));
+}
+
+function isManagementAuthorityRole(role: string | null | undefined) {
+  return [
+    'administrador',
+    'administrativo',
+    'gerencia',
+    'propietario / gerencia',
+    'propietario/gerencia',
+    'propietario gerencia',
+    'gerente general',
+    'superadmin',
+  ].includes(normalizeRoleValue(role));
+}
+
+function resolveMaintenanceAsset(record: MantenimientoRegistroConActivo | null | undefined) {
+  if (Array.isArray(record?.activos)) {
+    return record.activos[0] ?? null;
+  }
+
+  return record?.activos ?? null;
+}
+
+function isNonApplicableEvidenceValue(value: string | null | undefined) {
+  const normalizedValue = String(value ?? '').trim().toLowerCase();
+
+  return (
+    normalizedValue === 'n/a' ||
+    normalizedValue === 'na' ||
+    normalizedValue === 'no aplica' ||
+    normalizedValue === 'no_aplica' ||
+    normalizedValue === 'not applicable'
+  );
+}
+
+function normalizeMaintenanceRecord(
+  record: Partial<MantenimientoRegistroConActivo> | null | undefined,
+) {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    ...record,
+    management_signed_by: record.management_signed_by ?? null,
+    management_signed_at: record.management_signed_at ?? null,
+  } as MantenimientoRegistroConActivo;
+}
+
 function canRenderSupervisorSignature(usuario: UsuarioPermisos | null, recordStatus?: string | null) {
-  const normalizedRole = String(usuario?.role ?? '').trim().toLowerCase();
+  const normalizedRole = normalizeRoleValue(usuario?.role);
 
   return (
     (isStrictPendingSupervisorStatus(recordStatus) &&
@@ -543,7 +617,7 @@ function parseEvidenceJson(value: string) {
 }
 
 function extractEvidenceValues(rawValue: string | null) {
-  if (!rawValue) {
+  if (!rawValue || isNonApplicableEvidenceValue(rawValue)) {
     return [];
   }
 
@@ -553,6 +627,10 @@ function extractEvidenceValues(rawValue: string | null) {
   if (Array.isArray(parsedValue)) {
     return parsedValue.flatMap((item) => {
       if (typeof item === 'string') {
+        if (isNonApplicableEvidenceValue(item)) {
+          return [];
+        }
+
         return [item];
       }
 
@@ -566,7 +644,7 @@ function extractEvidenceValues(rawValue: string | null) {
           candidate.storagePath ??
           candidate.storage_path;
 
-        return typeof value === 'string' ? [value] : [];
+        return typeof value === 'string' && !isNonApplicableEvidenceValue(value) ? [value] : [];
       }
 
       return [];
@@ -583,7 +661,7 @@ function extractEvidenceValues(rawValue: string | null) {
       candidate.storagePath ??
       candidate.storage_path;
 
-    return typeof value === 'string' ? [value] : [];
+    return typeof value === 'string' && !isNonApplicableEvidenceValue(value) ? [value] : [];
   }
 
   return [trimmedValue];
@@ -592,7 +670,7 @@ function extractEvidenceValues(rawValue: string | null) {
 function normalizeEvidenceUrl(value: string, getPublicUrl: (path: string) => string) {
   const trimmedValue = value.trim();
 
-  if (!trimmedValue) {
+  if (!trimmedValue || isNonApplicableEvidenceValue(trimmedValue)) {
     return null;
   }
 
@@ -617,6 +695,10 @@ function extractEvidenceImageUrls(
       Boolean(respuesta.valor_texto?.includes(EVIDENCE_BUCKET));
 
     if (!isEvidenceField) {
+      return [];
+    }
+
+    if (isNonApplicableEvidenceValue(respuesta.valor_texto) || isNonApplicableEvidenceValue(respuesta.valor_seleccion)) {
       return [];
     }
 
@@ -882,12 +964,14 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
       ? parsedPayloadParaDB.filter(isPayloadFilaDB)
       : [];
 
-    console.log('[DIAGNOSTICO CHECKLIST P360] ENVIO [Paso 1 Sanitizacion]', {
-      assetUuid,
-      receivedResponses: Array.isArray(parsedPayload) ? parsedPayload.length : 0,
-      validResponses: responses.length,
-      rowsForDatabase: payloadParaDB.length,
-    });
+    if (ENABLE_SUPERADMIN_DEBUG_LOGS) {
+      console.log('[DIAGNOSTICO CHECKLIST P360] ENVIO [Paso 1 Sanitizacion]', {
+        assetUuid,
+        receivedResponses: Array.isArray(parsedPayload) ? parsedPayload.length : 0,
+        validResponses: responses.length,
+        rowsForDatabase: payloadParaDB.length,
+      });
+    }
 
     const { data: activo, error: activoError } = await supabase
       .from('activos')
@@ -896,10 +980,12 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
       .maybeSingle();
 
     if (activoError || !activo) {
-      console.log('[DIAGNOSTICO CHECKLIST P360] ENVIO [Activo Invalido]', {
-        assetUuid,
-        error: sanitizeSupabaseError(activoError),
-      });
+      if (ENABLE_SUPERADMIN_DEBUG_LOGS) {
+        console.log('[DIAGNOSTICO CHECKLIST P360] ENVIO [Activo Invalido]', {
+          assetUuid,
+          error: sanitizeSupabaseError(activoError),
+        });
+      }
 
       return {
         ok: false,
@@ -974,15 +1060,17 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
 
       cabeceraMantenimiento = cabeceraExistenteValidada;
     } else {
-      console.log(
-        '[AUDITORIA INFRAESTRUCTURA P360] Intentando insercion en mantenimientos_registros con payload:',
-        {
-          asset_code: normalizedAssetCode,
-          template_code: 'TMP-HVAC-PM',
-          status: 'draft',
-          assigned_technician: technicianEmail,
-        },
-      );
+      if (ENABLE_SUPERADMIN_DEBUG_LOGS) {
+        console.log(
+          '[AUDITORIA INFRAESTRUCTURA P360] Intentando insercion en mantenimientos_registros con payload:',
+          {
+            asset_code: normalizedAssetCode,
+            template_code: 'TMP-HVAC-PM',
+            status: 'draft',
+            assigned_technician: technicianEmail,
+          },
+        );
+      }
 
       const { data: cabecera, error: cabeceraError } = await supabase
         .from('mantenimientos_registros')
@@ -1004,9 +1092,11 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
         .single();
 
       if (cabeceraError || !cabecera) {
-        console.log('[DIAGNOSTICO CHECKLIST P360] ENVIO [Paso 2 Cabecera Error]', {
-          error: sanitizeSupabaseError(cabeceraError),
-        });
+        if (ENABLE_SUPERADMIN_DEBUG_LOGS) {
+          console.log('[DIAGNOSTICO CHECKLIST P360] ENVIO [Paso 2 Cabecera Error]', {
+            error: sanitizeSupabaseError(cabeceraError),
+          });
+        }
 
         return {
           ok: false,
@@ -1203,32 +1293,101 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
 
   const userEmail = user?.email?.trim().toLowerCase() ?? '';
 
-  const maintenanceColumns =
+  const safeMaintenanceColumns =
     'id, uuid, record_code, status, rejection_comments, assigned_technician, executed_at, notes, supervisor_signed_by, supervisor_signed_at, quality_signed_by, quality_signed_at, asset_code';
+  const extendedMaintenanceColumns =
+    `${safeMaintenanceColumns}, management_signed_by, management_signed_at`;
 
-  const [
-    { data: activoPorUuid, error: activoLookupError },
-    { data: maintenanceRecordByUuid },
-  ] = await Promise.all([
-    supabase.from('activos').select('*').eq('uuid', requestedUuid).maybeSingle(),
-    supabase
+  const { data: activoPorUuid, error: activoLookupError } = await supabase
+    .from('activos')
+    .select('*')
+    .eq('uuid', requestedUuid)
+    .maybeSingle();
+
+  let maintenanceRecordByUuid: MantenimientoRegistroConActivo | null = null;
+
+  try {
+    const { data: joinedMaintenanceRecordByUuid, error: joinedMaintenanceLookupError } =
+      await supabase
+        .from('mantenimientos_registros')
+        .select(`${extendedMaintenanceColumns}, activos(*)`)
+        .eq('uuid', requestedUuid)
+        .maybeSingle();
+
+    if (joinedMaintenanceLookupError) {
+      if (joinedMaintenanceLookupError.code !== '42703') {
+        console.error('[RUI ASSET HYDRATION] Joined maintenance lookup failed; using safe fallback.', {
+          requestedUuid,
+          code: joinedMaintenanceLookupError.code,
+          message: joinedMaintenanceLookupError.message,
+        });
+      }
+
+      const {
+        data: safeJoinedMaintenanceRecordByUuid,
+        error: safeJoinedMaintenanceLookupError,
+      } = await supabase
+        .from('mantenimientos_registros')
+        .select(`${safeMaintenanceColumns}, activos(*)`)
+        .eq('uuid', requestedUuid)
+        .maybeSingle();
+
+      if (safeJoinedMaintenanceLookupError) {
+        const { data: safeMaintenanceRecordByUuid } = await supabase
+          .from('mantenimientos_registros')
+          .select(safeMaintenanceColumns)
+          .eq('uuid', requestedUuid)
+          .maybeSingle();
+
+        maintenanceRecordByUuid = normalizeMaintenanceRecord(safeMaintenanceRecordByUuid);
+      } else {
+        maintenanceRecordByUuid = normalizeMaintenanceRecord(safeJoinedMaintenanceRecordByUuid);
+      }
+    } else {
+      maintenanceRecordByUuid = normalizeMaintenanceRecord(joinedMaintenanceRecordByUuid);
+    }
+  } catch (error) {
+    console.error('[RUI ASSET HYDRATION] Unexpected maintenance lookup failure; using safe fallback.', {
+      requestedUuid,
+      error: error instanceof Error ? error.message : 'unknown_error',
+    });
+
+    const {
+      data: safeJoinedMaintenanceRecordByUuid,
+      error: safeJoinedMaintenanceLookupError,
+    } = await supabase
       .from('mantenimientos_registros')
-      .select(maintenanceColumns)
+      .select(`${safeMaintenanceColumns}, activos(*)`)
       .eq('uuid', requestedUuid)
-      .maybeSingle(),
-  ]);
+      .maybeSingle();
+
+    if (safeJoinedMaintenanceLookupError) {
+      const { data: safeMaintenanceRecordByUuid } = await supabase
+        .from('mantenimientos_registros')
+        .select(safeMaintenanceColumns)
+        .eq('uuid', requestedUuid)
+        .maybeSingle();
+
+      maintenanceRecordByUuid = normalizeMaintenanceRecord(safeMaintenanceRecordByUuid);
+    } else {
+      maintenanceRecordByUuid = normalizeMaintenanceRecord(safeJoinedMaintenanceRecordByUuid);
+    }
+  }
 
   let activoHVAC = activoPorUuid as ActivoConUuid | null;
   let maintenanceRecord: MantenimientoRegistroResumen | null = null;
 
   if (maintenanceRecordByUuid) {
     maintenanceRecord = maintenanceRecordByUuid as MantenimientoRegistroResumen;
+    const joinedActivo = resolveMaintenanceAsset(maintenanceRecordByUuid);
 
     const recordAssetCode = normalizeUtf8String(
-      String((maintenanceRecordByUuid as { asset_code?: string | null }).asset_code ?? ''),
+      String(maintenanceRecordByUuid.asset_code ?? ''),
     );
 
-    if (recordAssetCode) {
+    if (joinedActivo) {
+      activoHVAC = joinedActivo;
+    } else if (recordAssetCode) {
       const { data: activoPorCodigo } = await supabase
         .from('activos')
         .select('*')
@@ -1240,13 +1399,13 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   } else if (activoHVAC) {
     const { data: maintenanceRecordData } = await supabase
       .from('mantenimientos_registros')
-      .select(maintenanceColumns)
+      .select(safeMaintenanceColumns)
       .eq('asset_code', activoHVAC.asset_code)
       .order('executed_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    maintenanceRecord = (maintenanceRecordData ?? null) as MantenimientoRegistroResumen | null;
+    maintenanceRecord = normalizeMaintenanceRecord(maintenanceRecordData);
   }
 
   const normalizedStatus = normalizeMaintenanceStatus(maintenanceRecord?.status) ?? 'draft';
@@ -1273,7 +1432,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
     userEmail
       ? supabase
           .from('usuarios_roles')
-          .select('user_email, role, can_review, can_approve')
+          .select('user_email, role, can_review, can_approve, can_manage_users')
           .eq('user_email', userEmail)
           .eq('active', true)
           .maybeSingle()
@@ -1293,9 +1452,18 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   const evidenceImageUrls = extractEvidenceImageUrls(orderedResponses, (path) => {
     return supabase.storage.from(EVIDENCE_BUCKET).getPublicUrl(path).data.publicUrl;
   });
+  const isAdministrativeAuthority = isAdministrativeAuthorityRole(usuario?.role);
   const supervisorCanSign =
-    canRenderSupervisorSignature(usuario, maintenanceRecord?.status) &&
-    !isAdministrativeConsultationRole(usuario?.role);
+    isAdministrativeAuthority || canRenderSupervisorSignature(usuario, maintenanceRecord?.status);
+  const qualityCanSign =
+    isAdministrativeAuthority ||
+    isQualityAuthorityRole(usuario?.role) ||
+    usuario?.can_approve === true;
+  const managementCanSign =
+    isAdministrativeAuthority ||
+    isManagementAuthorityRole(usuario?.role) ||
+    usuario?.can_manage_users === true ||
+    (usuario?.can_review === true && usuario?.can_approve === true);
   const supervisorGateDebug = {
     sessionEmail: userEmail || null,
     usuarioRole: usuario?.role ?? null,
@@ -1306,10 +1474,11 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
     isSupervisorStep: normalizedStatus === 'pending_supervisor',
     canRenderSupervisorSignature: canRenderSupervisorSignature(usuario, maintenanceRecord?.status),
     isAdministrativeConsultation: isAdministrativeConsultationRole(usuario?.role),
+    isAdministrativeAuthority,
     supervisorCanSign,
   };
 
-  if (process.env.NEXT_PUBLIC_SUPERADMIN_DEBUG === 'true') {
+  if (ENABLE_SUPERADMIN_DEBUG_LOGS && isAdministrativeAuthority) {
     console.log('[RUI SUPERVISOR ACTION GATE]', supervisorGateDebug);
   }
 
@@ -1352,10 +1521,16 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         timestamp: formatDateTimeUtc(maintenanceRecord?.quality_signed_at),
         meaning: 'Liberacion documental e inmutabilidad del registro aprobado.',
       },
+      {
+        title: 'Gerencia',
+        user: maintenanceRecord?.management_signed_by ?? 'Pendiente',
+        timestamp: formatDateTimeUtc(maintenanceRecord?.management_signed_at),
+        meaning: 'Aprobacion final y cierre administrativo del RUI.',
+      },
     ];
 
     return (
-      <main className="h-screen w-full flex flex-col overflow-hidden bg-slate-50 select-none text-slate-950 print:block print:h-auto print:min-h-0 print:overflow-visible print:bg-white print:text-black print:select-text">
+      <main className="min-h-screen w-full bg-background overflow-y-auto pb-12 text-slate-950 print:block print:h-auto print:min-h-0 print:overflow-visible print:bg-white print:text-black print:select-text">
         <style>
           {`
             @media print {
@@ -1540,6 +1715,42 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
           </div>
         </div>
 
+        <section className="mx-auto max-w-7xl px-4 pt-5 print:hidden">
+          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-wide text-sky-700">
+              Protocolo de Inspeccion y Mantenimiento de HVAC
+            </p>
+            <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0">
+                <h1 className="text-2xl font-black tracking-normal text-slate-950">
+                  {activoHVAC?.asset_name ?? 'Activo HVAC'}
+                </h1>
+                <p className="mt-1 text-sm font-semibold text-slate-600">
+                  {activoHVAC?.asset_code ?? 'Codigo de activo no disponible'}
+                </p>
+              </div>
+              <div className="grid gap-2 text-sm sm:grid-cols-2 lg:min-w-[28rem]">
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                    RUI UUID
+                  </p>
+                  <p className="mt-1 break-all font-mono text-xs font-bold text-slate-950">
+                    {maintenanceRecord?.uuid ?? requestedUuid}
+                  </p>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                    Record Code
+                  </p>
+                  <p className="mt-1 font-bold text-slate-950">
+                    {maintenanceRecord?.record_code ?? 'Sin codigo'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className={`${statusPanelClass} print:hidden`}>
           <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">
@@ -1561,12 +1772,12 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
           </span>
         </section>
 
-        <div className="px-4 pt-4 print:hidden">
+        <div className="sticky top-0 z-20 mx-auto max-w-7xl bg-background/95 px-4 pt-6 pb-3 backdrop-blur print:hidden">
           <ApprovalTimelineGraphic status={normalizedStatus} />
         </div>
 
-        <section className="grid flex-1 grid-cols-12 gap-4 p-4 overflow-hidden h-[calc(100vh-10rem)] print:hidden">
-          <div className="col-span-12 flex min-h-0 flex-col gap-3 overflow-hidden lg:col-span-8">
+        <section className="grid grid-cols-1 lg:grid-cols-4 gap-6 max-w-7xl mx-auto px-4 pt-6 print:hidden">
+          <div className="flex flex-col gap-4 lg:col-span-3">
             <section className="grid shrink-0 gap-2 rounded border border-slate-200 bg-white p-3 text-xs md:grid-cols-3">
               <div>
                 <p className="font-bold uppercase text-slate-500">Activo</p>
@@ -1608,7 +1819,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
               <EvidencePhotoGallery imageUrls={evidenceImageUrls} />
             </section>
 
-            <section className="min-h-0 flex-1 overflow-y-auto max-h-full bg-white rounded border border-slate-200">
+            <section className="overflow-x-auto bg-white rounded border border-slate-200">
               <table className="w-full border-collapse text-left text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-600">
                   <tr>
@@ -1654,7 +1865,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
             </section>
           </div>
 
-          <aside className="col-span-12 flex min-h-0 flex-col gap-3 overflow-y-auto lg:col-span-4">
+          <aside className="flex flex-col gap-4 lg:col-span-1">
             <article className="rounded border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">
@@ -1701,7 +1912,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
             />
 
             <SignatureReviewCard
-              canSign={usuario?.can_approve === true}
+              canSign={qualityCanSign}
               currentUserRole={usuario?.role ?? 'Sin rol activo'}
               rejectionComments={maintenanceRecord?.rejection_comments ?? null}
               recordUuid={maintenanceRecord?.uuid ?? ''}
@@ -1709,6 +1920,18 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
               signedAt={maintenanceRecord?.quality_signed_at ?? null}
               signedBy={maintenanceRecord?.quality_signed_by ?? null}
               signingRole="quality"
+              status={normalizedStatus}
+            />
+
+            <SignatureReviewCard
+              canSign={managementCanSign}
+              currentUserRole={usuario?.role ?? 'Sin rol activo'}
+              rejectionComments={maintenanceRecord?.rejection_comments ?? null}
+              recordUuid={maintenanceRecord?.uuid ?? ''}
+              reviewerTitle="Aprobacion y Cierre de Gerencia"
+              signedAt={maintenanceRecord?.management_signed_at ?? null}
+              signedBy={maintenanceRecord?.management_signed_by ?? null}
+              signingRole="management"
               status={normalizedStatus}
             />
           </aside>
@@ -1756,14 +1979,20 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         <header className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm print:hidden">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">
-                Documento unico de inspeccion
+              <p className="text-xs font-black uppercase tracking-wide text-sky-700">
+                Protocolo de Inspeccion y Mantenimiento de HVAC
               </p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-normal">
-                {activoHVAC?.asset_code ?? 'Activo no disponible'}
+              <h1 className="mt-1 text-2xl font-black tracking-normal">
+                {maintenanceRecord?.record_code ?? 'Documento unico de inspeccion'}
               </h1>
               <p className="mt-1 text-sm text-slate-700">
-                {activoHVAC?.asset_name ?? 'Checklist HVAC'}
+                RUI UUID:{' '}
+                <span className="break-all font-mono font-semibold">
+                  {maintenanceRecord?.uuid ?? requestedUuid}
+                </span>
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-600">
+                {activoHVAC?.asset_code ?? 'Activo no disponible'} / {activoHVAC?.asset_name ?? 'Checklist HVAC'}
               </p>
               <div className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
                 <div className="rounded-md bg-slate-100 px-3 py-2">
@@ -2029,7 +2258,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                 />
 
                 <SignatureReviewCard
-                  canSign={usuario?.can_approve === true}
+                  canSign={qualityCanSign}
                   currentUserRole={usuario?.role ?? 'Sin rol activo'}
                   rejectionComments={maintenanceRecord?.rejection_comments ?? null}
                   recordUuid={maintenanceRecord?.uuid ?? ''}
@@ -2037,6 +2266,18 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                   signedAt={maintenanceRecord?.quality_signed_at ?? null}
                   signedBy={maintenanceRecord?.quality_signed_by ?? null}
                   signingRole="quality"
+                  status={normalizedStatus}
+                />
+
+                <SignatureReviewCard
+                  canSign={managementCanSign}
+                  currentUserRole={usuario?.role ?? 'Sin rol activo'}
+                  rejectionComments={maintenanceRecord?.rejection_comments ?? null}
+                  recordUuid={maintenanceRecord?.uuid ?? ''}
+                  reviewerTitle="Aprobacion y Cierre de Gerencia"
+                  signedAt={maintenanceRecord?.management_signed_at ?? null}
+                  signedBy={maintenanceRecord?.management_signed_by ?? null}
+                  signingRole="management"
                   status={normalizedStatus}
                 />
               </div>
