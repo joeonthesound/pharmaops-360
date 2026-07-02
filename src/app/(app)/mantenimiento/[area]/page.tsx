@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ExternalLink, QrCode } from 'lucide-react';
+import { ExternalLink, Lock, QrCode } from 'lucide-react';
 import type { Activo } from '@/modules/activos/activos.interface';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import { ChecklistForm } from './checklist-form';
@@ -392,7 +392,7 @@ function canRenderSupervisorSignature(usuario: UsuarioPermisos | null, recordSta
   );
 }
 
-type TimelineStageState = 'completed' | 'active' | 'locked';
+type TimelineStageState = 'completed' | 'active' | 'locked' | 'sealed';
 
 type TimelineStage = {
   label: string;
@@ -400,7 +400,7 @@ type TimelineStage = {
   state: TimelineStageState;
 };
 
-function buildApprovalTimeline(status: MaintenanceStatus): TimelineStage[] {
+function buildApprovalTimeline(status: MaintenanceStatus, isManagementSigned: boolean): TimelineStage[] {
   const stageIndexByStatus: Record<MaintenanceStatus, number> = {
     draft: 0,
     rejected: 0,
@@ -430,13 +430,13 @@ function buildApprovalTimeline(status: MaintenanceStatus): TimelineStage[] {
     {
       label: 'Gerencia',
       detail: 'Cierre de Acta',
-      state: activeIndex >= 3 ? 'active' : 'locked',
+      state: isManagementSigned ? 'sealed' : activeIndex >= 3 ? 'active' : 'locked',
     },
   ];
 }
 
 function resolveTimelineNodeClass(state: TimelineStageState) {
-  if (state === 'completed') {
+  if (state === 'completed' || state === 'sealed') {
     return 'border-emerald-500 bg-emerald-600 text-white shadow-sm';
   }
 
@@ -448,11 +448,17 @@ function resolveTimelineNodeClass(state: TimelineStageState) {
 }
 
 function resolveTimelineLineClass(leftState: TimelineStageState) {
-  return leftState === 'completed' ? 'bg-emerald-400' : 'bg-slate-200';
+  return leftState === 'completed' || leftState === 'sealed' ? 'bg-emerald-400' : 'bg-slate-200';
 }
 
-function ApprovalTimelineGraphic({ status }: { status: MaintenanceStatus }) {
-  const stages = buildApprovalTimeline(status);
+function ApprovalTimelineGraphic({
+  isManagementSigned = false,
+  status,
+}: {
+  isManagementSigned?: boolean;
+  status: MaintenanceStatus;
+}) {
+  const stages = buildApprovalTimeline(status, isManagementSigned);
 
   return (
     <section className="rounded border border-slate-200 bg-white p-3 shadow-sm print:border-slate-300 print:shadow-none">
@@ -461,10 +467,13 @@ function ApprovalTimelineGraphic({ status }: { status: MaintenanceStatus }) {
           <div className="flex flex-1 items-center" key={stage.label}>
             <div className="flex min-w-0 flex-col items-center text-center">
               <span
-                className={`flex h-9 w-9 items-center justify-center rounded-full border-2 text-xs font-black transition ${resolveTimelineNodeClass(stage.state)} ${
+                className={`relative flex h-9 w-9 items-center justify-center rounded-full border-2 text-xs font-black transition ${resolveTimelineNodeClass(stage.state)} ${
                   stage.state === 'active' ? 'animate-pulse' : ''
-                }`}
+                } ${stage.state === 'sealed' ? 'text-transparent' : ''}`}
               >
+                {stage.state === 'sealed' ? (
+                  <Lock aria-hidden="true" className="absolute h-4 w-4 text-white" />
+                ) : null}
                 {stage.state === 'completed' ? '✓' : index + 1}
               </span>
               <span className="mt-2 text-[11px] font-black uppercase tracking-wide text-slate-900">
@@ -1850,7 +1859,10 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         </section>
 
         <div className="sticky top-0 z-20 mx-auto max-w-7xl bg-background/95 px-4 pt-6 pb-3 backdrop-blur print:hidden">
-          <ApprovalTimelineGraphic status={normalizedStatus} />
+          <ApprovalTimelineGraphic
+            isManagementSigned={Boolean(maintenanceRecord?.management_signed_at)}
+            status={normalizedStatus}
+          />
         </div>
 
         <section className="grid grid-cols-1 lg:grid-cols-4 gap-6 max-w-7xl mx-auto px-4 pt-6 print:hidden">
@@ -2104,7 +2116,10 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         </header>
 
         <div className="print:hidden">
-          <ApprovalTimelineGraphic status={normalizedStatus} />
+          <ApprovalTimelineGraphic
+            isManagementSigned={Boolean(maintenanceRecord?.management_signed_at)}
+            status={normalizedStatus}
+          />
         </div>
 
         {camposLookupError ? (

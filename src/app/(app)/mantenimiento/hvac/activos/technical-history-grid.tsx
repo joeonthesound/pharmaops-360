@@ -45,6 +45,7 @@ type HistoryOrder = {
   executed_at: string | null;
   scheduled_date: string | null;
   quality_signed_at: string | null;
+  management_signed_at?: string | null;
   rejection_comments?: string | null;
   activos: ActivoConUuid | ActivoConUuid[] | null;
 };
@@ -52,6 +53,7 @@ type HistoryOrder = {
 type TechnicalHistoryGridProps = {
   initialSearchTerm: string;
   orders: HistoryOrder[];
+  roleScope?: 'management' | 'quality' | 'supervisor' | 'technician';
 };
 
 const PAGE_SIZE = 10;
@@ -137,7 +139,31 @@ function resolveSortableDate(registro: HistoryOrder) {
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
-export function TechnicalHistoryGrid({ initialSearchTerm, orders }: TechnicalHistoryGridProps) {
+function isManagementSigned(registro: HistoryOrder) {
+  return Boolean(registro.management_signed_at) || registro.status === 'Cerrado';
+}
+
+function resolveDisplayStatusClass(registro: HistoryOrder) {
+  if (isManagementSigned(registro)) {
+    return 'border-emerald-700 bg-emerald-600 text-white shadow-sm';
+  }
+
+  return orderStatusClasses[registro.status];
+}
+
+function resolveDisplayStatusLabel(registro: HistoryOrder) {
+  if (isManagementSigned(registro)) {
+    return '🔐 Cerrado';
+  }
+
+  return orderStatusLabel[registro.status];
+}
+
+export function TechnicalHistoryGrid({
+  initialSearchTerm,
+  orders,
+  roleScope = 'management',
+}: TechnicalHistoryGridProps) {
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
   const [sortMode, setSortMode] = useState<'date_desc' | 'asset_asc'>('date_desc');
   const [page, setPage] = useState(1);
@@ -218,7 +244,9 @@ export function TechnicalHistoryGrid({ initialSearchTerm, orders }: TechnicalHis
 
       {paginatedOrders.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700 shadow-sm">
-          No hay registros que coincidan con los filtros aplicados.
+          {roleScope === 'technician' && orders.length === 0
+            ? '📋 No hay registros de mantenimiento asignados o creados bajo este perfil.'
+            : 'No hay registros que coincidan con los filtros aplicados.'}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -241,9 +269,9 @@ export function TechnicalHistoryGrid({ initialSearchTerm, orders }: TechnicalHis
                       {displayAssetCode}
                     </p>
                     <span
-                      className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide ${orderStatusClasses[registro.status]}`}
+                      className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide ${resolveDisplayStatusClass(registro)}`}
                     >
-                      {orderStatusLabel[registro.status]}
+                      {resolveDisplayStatusLabel(registro)}
                     </span>
                   </div>
                   <p className="mt-1 truncate text-sm font-semibold text-slate-700">

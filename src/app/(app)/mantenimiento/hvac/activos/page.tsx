@@ -59,12 +59,16 @@ type MantenimientoRegistro = {
   executed_at: string | null;
   scheduled_date: string | null;
   quality_signed_at: string | null;
+  management_signed_at?: string | null;
   rejection_comments?: string | null;
 };
 
 type DashboardOrder = MantenimientoRegistro & {
   activos: ActivoConUuid | ActivoConUuid[] | null;
 };
+
+const TECHNICIAN_ACTIONABLE_STATUS_FILTER =
+  'status.eq.DRAFT,status.eq.draft,status.eq.PENDING_TECHNICIAN,status.eq.pending_technician';
 
 const estadoClasses: Record<ActivoEstado, string> = {
   Operativo: 'border-emerald-200 bg-emerald-50 text-emerald-800',
@@ -469,7 +473,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     }
 
     if (roleScope === 'technician') {
-      registrosQuery = registrosQuery.ilike('assigned_technician', technicianEmail ?? '');
+      const technicianScopeFilter = [
+        `assigned_technician.ilike.%${technicianEmail ?? ''}%`,
+        TECHNICIAN_ACTIONABLE_STATUS_FILTER,
+      ].join(',');
+
+      registrosQuery = registrosQuery.or(technicianScopeFilter);
     }
 
     if (currentView === 'pending' && roleScope !== 'management') {
@@ -668,7 +677,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         ) : null}
 
         {!queryError && currentView === 'history' ? (
-          <TechnicalHistoryGrid initialSearchTerm={historySearchTerm} orders={historyOrders} />
+          <TechnicalHistoryGrid
+            initialSearchTerm={historySearchTerm}
+            orders={historyOrders}
+            roleScope={roleScope}
+          />
         ) : null}
 
         {!queryError && currentView !== 'history' ? (
