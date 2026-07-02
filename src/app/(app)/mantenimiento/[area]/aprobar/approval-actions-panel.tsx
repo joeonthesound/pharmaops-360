@@ -12,11 +12,13 @@ type MaintenanceStatus =
   | 'draft'
   | 'pending_supervisor'
   | 'pending_quality'
+  | 'pending_management'
   | 'approved'
   | 'rejected';
 
 type ApprovalActionsPanelProps = {
   canApprove: boolean;
+  canManage: boolean;
   canReview: boolean;
   recordUuid: string;
   status: MaintenanceStatus;
@@ -34,6 +36,8 @@ function resolveActiveBlock(status: MaintenanceStatus) {
       title: 'Firma Electronica - Supervisor',
       signingRole: 'supervisor' as const,
       approveLabel: 'Aprobar',
+      confirmApproveLabel: 'Confirmar aprobacion',
+      showRejectAction: true,
       permissionLabel: 'can_review',
     };
   }
@@ -43,15 +47,55 @@ function resolveActiveBlock(status: MaintenanceStatus) {
       title: 'Firma Electronica - Aseguramiento de la Calidad',
       signingRole: 'quality' as const,
       approveLabel: 'Liberar',
+      confirmApproveLabel: 'Confirmar liberacion',
+      showRejectAction: true,
       permissionLabel: 'can_approve',
+    };
+  }
+
+  if (status === 'pending_management') {
+    return {
+      title: 'Cierre de Gerencia - Emision RUI',
+      signingRole: 'management' as const,
+      approveLabel: 'Aprobar Cierre',
+      confirmApproveLabel: 'Confirmar cierre de Gerencia',
+      rejectLabel: 'Rechazar a Tecnico',
+      confirmRejectLabel: 'Confirmar rechazo a Tecnico',
+      showRejectAction: true,
+      permissionLabel: 'can_manage_users o rol Administrativo/Gerencia',
     };
   }
 
   return null;
 }
 
+function normalizeRoleValue(role: string) {
+  return role
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function isManagementRole(role: string) {
+  const normalizedRole = normalizeRoleValue(role);
+
+  return [
+    'administrador',
+    'administrativo',
+    'gerencia',
+    'propietario / gerencia',
+    'propietario/gerencia',
+    'propietario gerencia',
+    'gerente general',
+    'superadmin',
+  ].includes(normalizedRole);
+}
+
 export function ApprovalActionsPanel({
   canApprove,
+  canManage,
   canReview,
   recordUuid,
   status,
@@ -63,13 +107,17 @@ export function ApprovalActionsPanel({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const activeBlock = useMemo(() => resolveActiveBlock(status), [status]);
+  const canSignManagement =
+    isManagementRole(userRole) || (canApprove === true && canReview === true);
 
   const hasPermission =
     activeBlock?.signingRole === 'supervisor'
       ? canReview
       : activeBlock?.signingRole === 'quality'
         ? canApprove
-        : false;
+        : activeBlock?.signingRole === 'management'
+          ? canManage || canSignManagement
+          : false;
 
   function submitSignature(intent: PendingIntent) {
     if (!intent) {
@@ -161,23 +209,29 @@ export function ApprovalActionsPanel({
           }}
           type="button"
         >
-          {isPending ? 'Procesando...' : `${activeBlock.approveLabel} firma electronica`}
+          {isPending
+            ? 'Procesando...'
+            : activeBlock.signingRole === 'management'
+              ? activeBlock.approveLabel
+              : `${activeBlock.approveLabel} firma electronica`}
         </button>
 
-        <button
-          className="h-12 rounded-md bg-red-700 px-4 text-sm font-semibold text-white transition hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-200 active:bg-red-900 disabled:bg-slate-300"
-          disabled={isPending}
-          onClick={() => {
-            setPendingIntent({
-              signingRole: activeBlock.signingRole,
-              action: 'reject',
-            });
-            setErrorMessage(null);
-          }}
-          type="button"
-        >
-          Rechazar
-        </button>
+        {activeBlock.showRejectAction ? (
+          <button
+            className="h-12 rounded-md bg-red-700 px-4 text-sm font-semibold text-white transition hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-200 active:bg-red-900 disabled:bg-slate-300"
+            disabled={isPending}
+            onClick={() => {
+              setPendingIntent({
+                signingRole: activeBlock.signingRole,
+                action: 'reject',
+              });
+              setErrorMessage(null);
+            }}
+            type="button"
+          >
+            {activeBlock.rejectLabel ?? 'Rechazar'}
+          </button>
+        ) : null}
 
         {pendingIntent ? (
           <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
@@ -204,8 +258,8 @@ export function ApprovalActionsPanel({
               {isPending
                 ? 'Procesando...'
                 : pendingIntent.action === 'approve'
-                  ? 'Confirmar aprobacion'
-                  : 'Confirmar rechazo'}
+                  ? activeBlock.confirmApproveLabel
+                  : activeBlock.confirmRejectLabel ?? 'Confirmar rechazo'}
             </button>
           </div>
         ) : null}

@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 
-export type MaintenanceSigningRole = 'supervisor' | 'quality';
+export type MaintenanceSigningRole = 'supervisor' | 'quality' | 'management';
 export type MaintenanceSigningAction = 'approve' | 'reject';
 export type DirectedRejectionReturnStage = 'DRAFT' | 'PENDING_SUPERVISOR' | 'PENDING_QUALITY';
 
@@ -65,6 +65,7 @@ type UsuarioRolPermisos = {
   role: string | null;
   can_review: boolean | null;
   can_approve: boolean | null;
+  can_manage_users?: boolean | null;
 };
 
 type ClientSignatureMetadata = {
@@ -232,6 +233,29 @@ function canApproveAsQuality(permisos: UsuarioRolPermisos) {
   return isQA;
 }
 
+function isManagementSignatureRole(role: string | null | undefined) {
+  const normalizedRole = normalizeRoleValue(role);
+
+  return [
+    'administrador',
+    'administrativo',
+    'gerencia',
+    'propietario / gerencia',
+    'propietario/gerencia',
+    'propietario gerencia',
+    'gerente general',
+    'superadmin',
+  ].includes(normalizedRole);
+}
+
+function canSignAsManagement(permisos: UsuarioRolPermisos, signerEmail: string) {
+  return (
+    permisos.can_manage_users === true ||
+    isManagementSignatureRole(permisos.role) ||
+    signerEmail === 'josueth.acevedo@gmail.com'
+  );
+}
+
 function sanitizeDirectedRejectionInput(input: DirectedRejectionInput) {
   return {
     recordUuid: String(input.recordUuid ?? '').trim(),
@@ -276,11 +300,19 @@ function canSignCurrentStep(
     return normalizedStatus === 'pending_supervisor';
   }
 
-  return normalizedStatus === 'pending_quality';
+  if (signingRole === 'quality') {
+    return normalizedStatus === 'pending_quality';
+  }
+
+  return normalizedStatus === 'pending_management';
 }
 
 function resolveApprovedStatus(signingRole: MaintenanceSigningRole): MaintenanceRecordStatus {
-  return signingRole === 'supervisor' ? 'PENDING_QUALITY' : 'PENDING_MANAGEMENT';
+  if (signingRole === 'supervisor') {
+    return 'PENDING_QUALITY';
+  }
+
+  return 'PENDING_MANAGEMENT';
 }
 
 function canReviewAsSupervisorOrHigher(permisos: UsuarioRolPermisos) {
@@ -315,10 +347,15 @@ function buildSignaturePatch(
           supervisor_signed_by: signerEmail,
           supervisor_signed_at: signedAtUtc,
         }
-      : {
-          quality_signed_by: signerEmail,
-          quality_signed_at: signedAtUtc,
-        };
+      : signingRole === 'quality'
+        ? {
+            quality_signed_by: signerEmail,
+            quality_signed_at: signedAtUtc,
+          }
+        : {
+            management_signed_by: signerEmail,
+            management_signed_at: signedAtUtc,
+          };
 
   return {
     ...signaturePatch,
@@ -412,7 +449,7 @@ export async function signMaintenanceRecordAction(
     };
   }
 
-  if (signingRole !== 'supervisor' && signingRole !== 'quality') {
+  if (signingRole !== 'supervisor' && signingRole !== 'quality' && signingRole !== 'management') {
     return {
       ok: false,
       message: 'Rol de firma no permitido.',
@@ -485,7 +522,7 @@ export async function signMaintenanceRecordAction(
 
   const { data: usuario, error: usuarioError } = await supabase
     .from('usuarios_roles')
-    .select('user_email, active, role, can_review, can_approve')
+    .select('user_email, active, role, can_review, can_approve, can_manage_users')
     .eq('user_email', signerEmail)
     .eq('active', true)
     .maybeSingle();
@@ -546,6 +583,23 @@ export async function signMaintenanceRecordAction(
           role: permisos.role,
           normalizedRole: normalizeRoleValue(permisos.role),
           canApprove: permisos.can_approve,
+        },
+      },
+    };
+  }
+
+  if (signingRole === 'management' && !canSignAsManagement(permisos, signerEmail)) {
+    return {
+      ok: false,
+      message: 'Usuario sin perfil de Gerencia o Administracion para cierre del RUI.',
+      debug: {
+        stage: 'rbac_validation',
+        code: 'missing_management_signature_profile',
+        details: {
+          signerEmail,
+          role: permisos.role,
+          normalizedRole: normalizeRoleValue(permisos.role),
+          canManageUsers: permisos.can_manage_users,
         },
       },
     };

@@ -11,6 +11,7 @@ type MaintenanceStatus =
   | 'draft'
   | 'pending_supervisor'
   | 'pending_quality'
+  | 'pending_management'
   | 'approved'
   | 'rejected';
 
@@ -28,6 +29,8 @@ type MantenimientoRegistro = {
   supervisor_signed_at: string | null;
   quality_signed_by: string | null;
   quality_signed_at: string | null;
+  management_signed_by: string | null;
+  management_signed_at: string | null;
   rejection_comments: string | null;
 };
 
@@ -46,6 +49,7 @@ type UsuarioPermisos = {
   role: string | null;
   can_review: boolean | null;
   can_approve: boolean | null;
+  can_manage_users: boolean | null;
 };
 
 type FormularioRespuesta = {
@@ -83,6 +87,7 @@ const statusLabel: Record<MaintenanceStatus, string> = {
   draft: 'Borrador',
   pending_supervisor: 'Pendiente Supervisor',
   pending_quality: 'Pendiente Calidad',
+  pending_management: 'Pendiente Gerencia',
   approved: 'Aprobado',
   rejected: 'Rechazado',
 };
@@ -91,6 +96,7 @@ const statusClass: Record<MaintenanceStatus, string> = {
   draft: 'border-slate-200 bg-slate-100 text-slate-700',
   pending_supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
   pending_quality: 'border-sky-200 bg-sky-50 text-sky-800',
+  pending_management: 'border-purple-200 bg-purple-50 text-purple-800',
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   rejected: 'border-red-200 bg-red-50 text-red-800',
 };
@@ -108,6 +114,10 @@ function normalizeMaintenanceStatus(status: string | null | undefined): Maintena
 
   if (normalizedStatus === 'pending_quality' || normalizedStatus === 'pendiente_calidad') {
     return 'pending_quality';
+  }
+
+  if (normalizedStatus === 'pending_management' || normalizedStatus === 'pendiente_gerencia') {
+    return 'pending_management';
   }
 
   if (normalizedStatus === 'approved' || normalizedStatus === 'aprobado') {
@@ -321,7 +331,7 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
   const { data: registroData, error: registroError } = await supabase
     .from('mantenimientos_registros')
     .select(
-      'id, uuid, record_code, asset_code, template_code, assigned_technician, executed_at, status, notes, supervisor_signed_by, supervisor_signed_at, quality_signed_by, quality_signed_at, rejection_comments',
+      'id, uuid, record_code, asset_code, template_code, assigned_technician, executed_at, status, notes, supervisor_signed_by, supervisor_signed_at, quality_signed_by, quality_signed_at, management_signed_by, management_signed_at, rejection_comments',
     )
     .eq('uuid', recordUuid)
     .maybeSingle();
@@ -356,7 +366,7 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
       userEmail
         ? supabase
             .from('usuarios_roles')
-            .select('user_email, full_name, role, can_review, can_approve')
+            .select('user_email, full_name, role, can_review, can_approve, can_manage_users')
             .eq('user_email', userEmail)
             .eq('active', true)
             .maybeSingle()
@@ -374,6 +384,7 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
   const outOfRangeCount = getOutOfRangeCount(respuestas);
   const canReview = usuario?.can_review === true;
   const canApprove = usuario?.can_approve === true;
+  const canManage = usuario?.can_manage_users === true;
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950">
@@ -584,11 +595,37 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
                   </span>
                 </div>
               </article>
+
+              <article className="rounded-md border border-slate-200 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">
+                      Aprobacion y Cierre de Gerencia
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {registro?.management_signed_by ?? 'Estado: Pendiente de Firma'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatDateTime(registro?.management_signed_at ?? null)}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                      registro?.management_signed_at
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                        : 'border-slate-200 bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {registro?.management_signed_at ? 'Firmado' : 'Pendiente de Firma'}
+                  </span>
+                </div>
+              </article>
             </div>
           </section>
 
           <ApprovalActionsPanel
             canApprove={canApprove}
+            canManage={canManage}
             canReview={canReview}
             recordUuid={recordUuid}
             status={normalizedStatus}
