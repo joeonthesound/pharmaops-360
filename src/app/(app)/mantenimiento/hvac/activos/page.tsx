@@ -1,6 +1,9 @@
 ﻿import Link from 'next/link';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import type { Activo, ActivoEstado } from '@/modules/activos/activos.interface';
+import { TechnicalHistoryGrid } from './technical-history-grid';
+
+const ENABLE_SUPERADMIN_DEBUG_LOGS: boolean | 'verbose' = false;
 
 type DashboardPageProps = {
   searchParams?: Promise<{
@@ -49,8 +52,10 @@ type MaintenanceStatus =
 
 type MantenimientoRegistro = {
   uuid: string;
+  record_code?: string | null;
   asset_code: string | null;
   status: MaintenanceStatus;
+  created_at?: string | null;
   executed_at: string | null;
   scheduled_date: string | null;
   quality_signed_at: string | null;
@@ -335,15 +340,19 @@ async function attachAssetsToOrders(
     .in('asset_code', assetCodes);
 
   if (activosError) {
-    console.log('[DEBUG RLS ISOLATION] Asset lookup failed during split fetch:', {
-      code: activosError.code,
-      message: activosError.message,
-    });
+    if (ENABLE_SUPERADMIN_DEBUG_LOGS) {
+      console.log('[DEBUG RLS ISOLATION] Asset lookup failed during split fetch:', {
+        code: activosError.code,
+        message: activosError.message,
+      });
+    }
 
     return orders.map((order) => ({ ...order, activos: null }));
   }
 
-  console.log('[DEBUG RLS ISOLATION] Asset rows resolved after split fetch:', activosData?.length || 0);
+  if (ENABLE_SUPERADMIN_DEBUG_LOGS) {
+    console.log('[DEBUG RLS ISOLATION] Asset rows resolved after split fetch:', activosData?.length || 0);
+  }
 
   const activosByCode = new Map(
     (activosData ?? []).map((activo) => [String(activo.asset_code ?? ''), activo]),
@@ -421,6 +430,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         .maybeSingle()
     : { data: null };
   const role = (usuarioData as { role?: string | null } | null)?.role;
+  const isSuperadminDebugEnabled =
+    ENABLE_SUPERADMIN_DEBUG_LOGS &&
+    String(role ?? '').trim().toLowerCase() === 'administrativo';
   const roleScope = resolveDashboardRoleScope(role, technicianEmail);
   const visiblePendingStatuses = resolvePendingStatusesForRole(roleScope);
   const resolvedSearchParams = searchParams ? await searchParams : {};
@@ -433,21 +445,28 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const selectedRiskLevel = resolvedSearchParams.risk === 'high' ? 'high' : 'all';
   let dashboardOrders: DashboardOrder[] = [];
   let queryError: { code?: string; message?: string } | null = null;
+  let absoluteTotalCount = 0;
+  let allRecordsByStatus: Record<string, number> = {};
 
-  console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 1 [Llamada a Ordenes Activas]', {
-    table: 'mantenimientos_registros',
-    select: '*, activos(*)',
-    status: statusesForView,
-    roleScope,
-    view: currentView,
-  });
+  if (isSuperadminDebugEnabled) {
+    console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 1 [Llamada a Ordenes Activas]', {
+      table: 'mantenimientos_registros',
+      select: '*, activos(*)',
+      status: statusesForView,
+      roleScope,
+      view: currentView,
+    });
+  }
 
   try {
     let registrosQuery = supabase
       .from('mantenimientos_registros')
       .select('*')
-      .in('status', statusesForView)
       .order('executed_at', { ascending: false });
+
+    if (currentView !== 'history') {
+      registrosQuery = registrosQuery.in('status', statusesForView);
+    }
 
     if (roleScope === 'technician') {
       registrosQuery = registrosQuery.ilike('assigned_technician', technicianEmail ?? '');
@@ -457,13 +476,29 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       registrosQuery = registrosQuery.is('quality_signed_at', null);
     }
 
-    const { data: rawOrders } = await supabase
-      .from('mantenimientos_registros')
-      .select('id, status, asset_code');
-    console.log('[DEBUG RLS ISOLATION] Raw orders without asset join:', rawOrders?.length || 0);
-    console.log('[DEBUG HISTORIAL STATUS MAP]', {
-      statuses: Array.from(new Set((rawOrders ?? []).map((order) => order.status))),
-    });
+    const [{ data: rawOrders }, { count: absoluteTotal }] = await Promise.all([
+      supabase
+        .from('mantenimientos_registros')
+        .select('id, status, asset_code'),
+      supabase
+        .from('mantenimientos_registros')
+        .select('*', { count: 'exact', head: true }),
+    ]);
+
+    absoluteTotalCount = absoluteTotal ?? rawOrders?.length ?? 0;
+    allRecordsByStatus = (rawOrders ?? []).reduce<Record<string, number>>((accumulator, order) => {
+      const statusKey = String(order.status ?? 'SIN_STATUS');
+      accumulator[statusKey] = (accumulator[statusKey] ?? 0) + 1;
+      return accumulator;
+    }, {});
+
+    if (isSuperadminDebugEnabled) {
+      console.log('[DEBUG RLS ISOLATION] Raw orders without asset join:', rawOrders?.length || 0);
+      console.log('[DEBUG HISTORIAL STATUS MAP]', {
+        statuses: Array.from(new Set((rawOrders ?? []).map((order) => order.status))),
+        allRecordsByStatus,
+      });
+    }
 
     const { data: registrosData, error: registrosError } = await registrosQuery;
 
@@ -473,13 +508,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         message: registrosError.message,
       };
 
-      console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 3 [Ordenes por Estado]', {
-        result: 'supabase_error',
-        error: {
-          code: registrosError.code,
-          message: registrosError.message,
-        },
-      });
+      if (isSuperadminDebugEnabled) {
+        console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 3 [Ordenes por Estado]', {
+          result: 'supabase_error',
+          error: {
+            code: registrosError.code,
+            message: registrosError.message,
+          },
+        });
+      }
     } else {
       const finalRecords = await attachAssetsToOrders(
         supabase,
@@ -495,34 +532,61 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           : finalRecords.filter((registro) => statusesForView.includes(registro.status));
     }
 
-    console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 2 [Resultado / Respuesta del Servidor]', {
-      result: queryError ? 'supabase_error' : 'supabase_success',
-      selectClause: queryError ? null : 'mantenimientos_registros(*) + split activos lookup',
-      orderRecords: dashboardOrders.length,
-      assetCodes: dashboardOrders.map((orden) => orden.asset_code),
-      joinedAssetCodes: dashboardOrders.map((orden) => resolveRelatedAsset(orden)?.asset_code ?? null),
-      orderStatusMap: dashboardOrders.map((registro) => ({
-        uuid: registro.uuid,
-        asset_code: registro.asset_code,
-        status: registro.status,
-      })),
-      appliedHistoryFilters: {
-        q: historySearchTerm,
-        asset: selectedHistoryAsset,
-        deviations: showOnlyDeviations,
-        aging: showAgingSignatures,
-        risk: selectedRiskLevel,
-      },
-    });
+    if (ENABLE_SUPERADMIN_DEBUG_LOGS === 'verbose' && isSuperadminDebugEnabled) {
+      const { data: allRecordsDump } = await supabase
+        .from('mantenimientos_registros')
+        .select('uuid, record_code');
+
+      console.log('============= [AUDITORIA TOTAL DE RUI UUIDS] =============');
+      console.log({
+        totalContados: allRecordsDump?.length || 0,
+        listadoUuids: allRecordsDump?.map((record) => ({
+          code: record.record_code,
+          uuid: record.uuid,
+        })),
+      });
+      console.log('==========================================================');
+    }
+
+    if (isSuperadminDebugEnabled) {
+      console.log('[TELEMETRIA METRICAS ABSOLUTAS P360]', {
+        totalRegistrosEnSistema: absoluteTotalCount,
+        totalFiltradosEnVistaActual: dashboardOrders?.length || 0,
+        activeAssetScope: 'hvac',
+        diagnosticMessage: 'Métrica total absoluta cargada para auditoría de Superadmin',
+        allRecordsByStatus,
+      });
+      console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 2 [Resultado / Respuesta del Servidor]', {
+        result: queryError ? 'supabase_error' : 'supabase_success',
+        selectClause: queryError ? null : 'mantenimientos_registros(*) + split activos lookup',
+        orderRecords: dashboardOrders.length,
+        assetCodes: dashboardOrders.map((orden) => orden.asset_code),
+        joinedAssetCodes: dashboardOrders.map((orden) => resolveRelatedAsset(orden)?.asset_code ?? null),
+        orderStatusMap: dashboardOrders.map((registro) => ({
+          uuid: registro.uuid,
+          asset_code: registro.asset_code,
+          status: registro.status,
+        })),
+        appliedHistoryFilters: {
+          q: historySearchTerm,
+          asset: selectedHistoryAsset,
+          deviations: showOnlyDeviations,
+          aging: showAgingSignatures,
+          risk: selectedRiskLevel,
+        },
+      });
+    }
   } catch (error) {
     queryError = {
       message: error instanceof Error ? error.message : 'Error inesperado',
     };
 
-    console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 2 [Resultado / Respuesta del Servidor]', {
-      result: 'exception',
-      error: queryError,
-    });
+    if (isSuperadminDebugEnabled) {
+      console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 2 [Resultado / Respuesta del Servidor]', {
+        result: 'exception',
+        error: queryError,
+      });
+    }
   }
 
   const pendingOrders = dashboardOrders.filter((registro) =>
@@ -540,36 +604,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       : dashboardOrders.filter((registro) =>
           HISTORY_STATUSES.includes(registro.status as (typeof HISTORY_STATUSES)[number]),
         );
-  const normalizedHistorySearchTerm = historySearchTerm.trim().toLowerCase();
-  const filteredHistoryOrders = historyOrders.filter((registro) => {
-    const activo = resolveRelatedAsset(registro);
-    const matchesSearch =
-      !normalizedHistorySearchTerm ||
-      registro.uuid.toLowerCase() === normalizedHistorySearchTerm ||
-      String(registro.uuid).toLowerCase().includes(normalizedHistorySearchTerm) ||
-      String(registro.asset_code ?? '').toLowerCase().includes(normalizedHistorySearchTerm) ||
-      String(activo?.asset_code ?? '').toLowerCase().includes(normalizedHistorySearchTerm);
-    const matchesAsset =
-      !selectedHistoryAsset ||
-      (activo?.asset_code ?? registro.asset_code ?? '') === selectedHistoryAsset;
-
-    return matchesSearch && matchesAsset;
-  });
   const visibleOrders =
     currentView === 'pending'
       ? pendingOrders
       : currentView === 'sent'
         ? sentOrders
         : currentView === 'history'
-          ? filteredHistoryOrders
+          ? historyOrders
         : rejectedOrders;
-  const historyAssetOptions = Array.from(
-    new Set(
-      historyOrders
-        .map((registro) => resolveRelatedAsset(registro)?.asset_code ?? registro.asset_code)
-        .filter((assetCode): assetCode is string => Boolean(assetCode)),
-    ),
-  ).sort((a, b) => a.localeCompare(b));
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950">
@@ -619,163 +661,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         ) : null}
 
-        {!queryError && currentView === 'history' ? (
-          <section
-            aria-label="Filtros de historial tecnico"
-            className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm"
-          >
-            <form className="grid gap-4" method="get">
-              <div className="grid gap-3 md:grid-cols-[1fr_190px_190px_auto]">
-                <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-600">
-                  <span>{`C\u00f3digo de Reporte / UUID`}</span>
-                  <input
-                    className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                    defaultValue={historySearchTerm}
-                    name="q"
-                    placeholder={`Buscar por C\u00f3digo de Reporte o UUID`}
-                    type="search"
-                  />
-                </label>
-
-                <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-600">
-                  <span>Filtrar por Activo</span>
-                  <select
-                    className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                    defaultValue={selectedHistoryAsset}
-                    name="asset"
-                  >
-                    <option value="">Todos los activos</option>
-                    {historyAssetOptions.map((assetCode) => (
-                      <option key={assetCode} value={assetCode}>
-                        {assetCode}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-600">
-                  <span>Riesgo</span>
-                  <select
-                    className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                    defaultValue={selectedRiskLevel}
-                    name="risk"
-                  >
-                    <option value="all">Todos</option>
-                    <option value="high">Alta Criticidad</option>
-                  </select>
-                </label>
-
-                <button
-                  className="flex h-11 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 md:self-end"
-                  type="submit"
-                >
-                  Aplicar
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 md:flex-row md:items-end md:justify-between">
-                <div className="flex flex-wrap gap-2">
-                  <label
-                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm font-semibold transition ${
-                      showOnlyDeviations
-                        ? 'border-transparent bg-slate-900 text-white shadow-sm'
-                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <input
-                      className="sr-only"
-                      defaultChecked={showOnlyDeviations}
-                      name="deviations"
-                      type="checkbox"
-                      value="true"
-                    />
-                    <span aria-hidden="true">{`\u26a0\ufe0f`}</span>
-                    <span>Ver solo Desviaciones (Fuera de Rango)</span>
-                  </label>
-
-                  <label
-                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm font-semibold transition ${
-                      showAgingSignatures
-                        ? 'border-transparent bg-slate-900 text-white shadow-sm'
-                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <input
-                      className="sr-only"
-                      defaultChecked={showAgingSignatures}
-                      name="aging"
-                      type="checkbox"
-                      value="72h"
-                    />
-                    <span aria-hidden="true">{`\u23f3`}</span>
-                    <span>Firmas Pendientes &gt; 72h</span>
-                  </label>
-                </div>
-              </div>
-            </form>
-          </section>
-        ) : null}
-
-        {!queryError && visibleOrders.length === 0 ? (
+        {!queryError && currentView !== 'history' && visibleOrders.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700 shadow-sm">
             No hay ordenes en esta pestana segun el estado transaccional actual.
           </div>
         ) : null}
 
-        {!queryError && currentView === 'history' && visibleOrders.length > 0 ? (
-          <section aria-label="Historial tecnico aprobado" className="grid gap-3">
-            {visibleOrders.map((registro) => {
-              const activo = resolveRelatedAsset(registro);
-              const displayAssetCode =
-                activo?.asset_code ?? registro.asset_code ?? 'Activo no disponible';
-              const displayAssetName = activo?.asset_name ?? 'Orden de mantenimiento aprobada';
-              const displayLocation = formatLocation(activo);
-              const actionHref = `/mantenimiento/hvac/rui/ht/${registro.uuid}`;
-
-              return (
-                <article
-                  className="grid gap-3 rounded-lg border border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm md:grid-cols-[1.1fr_1fr_auto] md:items-center"
-                  key={registro.uuid}
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-base font-bold tracking-normal text-slate-950">
-                        {displayAssetCode}
-                      </p>
-                      <span
-                        className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide ${orderStatusClasses[registro.status]}`}
-                      >
-                        {orderStatusLabel[registro.status]}
-                      </span>
-                    </div>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-700">
-                      {displayAssetName}
-                    </p>
-                    <p className="mt-1 truncate text-xs font-medium text-slate-500">
-                      UUID: {registro.uuid}
-                    </p>
-                  </div>
-
-                  <div className="grid gap-1 text-sm text-slate-700">
-                    <span className="font-semibold text-slate-900">{displayLocation}</span>
-                    <span className="text-xs font-medium text-slate-500">
-                      Fecha de ejecucion: {registro.executed_at ?? 'No registrada'}
-                    </span>
-                    <span className="text-xs font-medium text-slate-500">
-                      Firma Calidad: {registro.quality_signed_at ?? 'No registrada'}
-                    </span>
-                  </div>
-
-                  <Link
-                    className="flex min-h-11 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-bold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                    href={actionHref}
-                  >
-                    Ver Reporte Inmutable
-                  </Link>
-                </article>
-              );
-            })}
-          </section>
+        {!queryError && currentView === 'history' ? (
+          <TechnicalHistoryGrid initialSearchTerm={historySearchTerm} orders={historyOrders} />
         ) : null}
 
         {!queryError && currentView !== 'history' ? (

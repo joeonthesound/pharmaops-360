@@ -1522,6 +1522,11 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
 
   if (ENABLE_SUPERADMIN_DEBUG_LOGS && isAdministrativeAuthority) {
     console.log('[RUI SUPERVISOR ACTION GATE]', supervisorGateDebug);
+    console.log('[TELEMETRIA METRICAS DATA P360]', {
+      totalInspectionRecords: orderedResponses.length || Object.keys(responsesBySection || {}).length,
+      targetAsset: activoHVAC?.asset_code ?? maintenanceRecord?.asset_code ?? 'N/A',
+      schemaPhase: 'MANAGEMENT_CLOSURE_PREVIEW',
+    });
   }
 
   const printMetadata = [
