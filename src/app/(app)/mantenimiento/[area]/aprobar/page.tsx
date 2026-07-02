@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
+import { EvidenceLightboxGallery } from '@/modules/mantenimiento/components/evidence-lightbox-gallery';
 import { ApprovalActionsPanel } from './approval-actions-panel';
 
 type AprobarPageProps = {
@@ -533,21 +534,16 @@ export default async function PanelAprobacionPage({ params }: AprobarPageProps) 
             </p>
 
             {evidenceImageUrls.length > 0 ? (
-              <div className="mt-4 grid grid-cols-2 gap-4 print:grid print:grid-cols-2">
-                {evidenceImageUrls.map((imageUrl, index) => (
-                  <figure
-                    className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-                    key={`${imageUrl}-${index}`}
-                  >
-                    <img
-                      alt={`Evidencia fotografica de inspeccion ${index + 1}`}
-                      className="aspect-video w-full object-cover"
-                      loading="lazy"
-                      src={imageUrl}
-                    />
-                  </figure>
-                ))}
-              </div>
+              <EvidenceLightboxGallery
+                gridClassName="mt-4 grid grid-cols-2 gap-4 print:grid print:grid-cols-2"
+                imageClassName="aspect-video w-full object-cover transition-all group-hover:scale-105"
+                images={evidenceImageUrls.map((imageUrl, index) => ({
+                  alt: `Evidencia fotografica de inspeccion ${index + 1}`,
+                  label: `Evidencia fotografica de inspeccion ${index + 1}`,
+                  src: imageUrl,
+                }))}
+                thumbnailClassName="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50 transition-all hover:ring-2 hover:ring-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
             ) : (
               <div className="mt-4 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 text-center text-xs font-semibold text-slate-400">
                 Sin evidencias multimedia adjuntas para este registro.
