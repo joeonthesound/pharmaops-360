@@ -3,7 +3,7 @@ import type { NavigationNode, PharmaOpsRole, SidebarTheme } from './navigation.i
 const slateTheme: SidebarTheme = {
   shell: 'bg-slate-900',
   item: 'hover:bg-slate-800',
-  itemActive: 'bg-slate-950 border-l-2 border-orange-500',
+  itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
   text: 'text-white',
   mutedText: 'text-slate-300',
   border: 'border-slate-800',
@@ -12,30 +12,30 @@ const slateTheme: SidebarTheme = {
 export const ROLE_SIDEBAR_THEME: Record<PharmaOpsRole, SidebarTheme> = {
   Técnico: {
     ...slateTheme,
-    mutedText: 'text-orange-200',
-    itemActive: 'bg-slate-950 border-l-2 border-orange-500 text-white',
+    mutedText: 'text-slate-300',
+    itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
   },
   Calidad: {
     ...slateTheme,
     mutedText: 'text-emerald-200',
-    itemActive: 'bg-slate-950 border-l-2 border-emerald-500 text-white',
+    itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
   },
   Producción: {
     ...slateTheme,
     mutedText: 'text-red-200',
-    itemActive: 'bg-slate-950 border-l-2 border-red-500 text-white',
+    itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
   },
   Administrativo: slateTheme,
   Administrador: slateTheme,
   Supervisor: {
     ...slateTheme,
-    mutedText: 'text-orange-200',
-    itemActive: 'bg-slate-950 border-l-2 border-orange-500 text-white',
+    mutedText: 'text-slate-300',
+    itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
   },
   Temporal: {
     ...slateTheme,
     mutedText: 'text-amber-200',
-    itemActive: 'bg-slate-950 border-l-2 border-amber-500 text-white',
+    itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
   },
   'Propietario / Gerencia': slateTheme,
 };

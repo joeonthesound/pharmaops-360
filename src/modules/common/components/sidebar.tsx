@@ -6,6 +6,7 @@ import {
   Activity,
   AlertTriangle,
   ChevronDown,
+  ChevronLeft,
   ClipboardCheck,
   History,
   Layers,
@@ -38,12 +39,15 @@ import { filterNavigationByRole } from './navigation.utils';
 
 type SidebarProps = {
   capabilities?: NavigationCapabilities;
+  isCollapsed?: boolean;
   currentRole: string;
   currentPath?: string;
+  onToggleCollapsed?: () => void;
+  showCollapseToggle?: boolean;
 };
 
 const MAINTENANCE_ACTIVE_CLASS =
-  'bg-[#C76E00] border-l-2 border-[#C76E00] text-blue-900 hover:bg-[#C76E00]';
+  'bg-slate-800 border-l-4 border-emerald-500 text-white hover:bg-slate-800';
 
 const iconMap = {
   Activity,
@@ -113,7 +117,14 @@ function NavigationIcon({ name, className }: { name?: string; className: string 
   return <Icon aria-hidden="true" className={className} size={18} strokeWidth={2} />;
 }
 
-export function Sidebar({ capabilities = {}, currentRole, currentPath = '' }: SidebarProps) {
+export function Sidebar({
+  capabilities = {},
+  currentRole,
+  currentPath = '',
+  isCollapsed = false,
+  onToggleCollapsed,
+  showCollapseToggle = false,
+}: SidebarProps) {
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const theme = resolveTheme(currentRole);
@@ -197,47 +208,62 @@ export function Sidebar({ capabilities = {}, currentRole, currentPath = '' }: Si
       isActivosTreeNode && (isActive || isOpen || hasActiveChild || depth > 0);
     const activeClass =
       isMaintenanceActive || isActivosActive ? MAINTENANCE_ACTIVE_CLASS : theme.itemActive;
-    const activeTextClass = isMaintenanceActive || isActivosActive ? 'text-blue-900' : theme.text;
-    const iconClass = isMaintenanceActive || isActivosActive ? 'text-blue-900' : theme.mutedText;
-    const paddingClass = depth === 0 ? 'px-3' : depth === 1 ? 'pl-4 pr-3' : 'pl-8 pr-3';
-    const itemClass = `${paddingClass} flex min-h-11 w-full items-center justify-between rounded-md py-2 text-left text-sm font-semibold transition ${activeTextClass} ${
+    const activeTextClass = isMaintenanceActive || isActivosActive ? 'text-white' : theme.text;
+    const iconClass = isMaintenanceActive || isActivosActive ? 'text-white' : theme.mutedText;
+    const paddingClass = isCollapsed
+      ? 'px-2'
+      : depth === 0
+        ? 'px-3'
+        : depth === 1
+          ? 'pl-6 pr-3'
+          : 'pl-10 pr-3';
+    const justifyClass = isCollapsed ? 'justify-center' : 'justify-between';
+    const itemClass = `${paddingClass} flex min-h-11 w-full items-center ${justifyClass} rounded-md py-2 text-left text-sm font-semibold transition ${activeTextClass} ${
       isActive || isMaintenanceActive || isActivosActive ? activeClass : theme.item
     }`;
+    const contentClass = `flex min-w-0 flex-1 items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`;
+    const labelClass = isCollapsed ? 'hidden' : 'truncate';
 
     if (hasChildren) {
       return (
-        <div key={node.title}>
+        <div key={node.title} title={isCollapsed ? node.title : undefined}>
           <div className={itemClass}>
             {node.href ? (
-              <Link className="flex min-w-0 flex-1 items-center gap-3" href={node.href}>
+              <Link className={contentClass} href={node.href}>
                 <NavigationIcon className={iconClass} name={node.icon} />
-                <span className="truncate">{node.title}</span>
+                <span className={labelClass}>{node.title}</span>
               </Link>
             ) : (
               <button
-                className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                className={`${contentClass} text-left`}
                 onClick={() => toggleMenu(node.title)}
                 type="button"
               >
                 <NavigationIcon className={iconClass} name={node.icon} />
-                <span className="truncate">{node.title}</span>
+                <span className={labelClass}>{node.title}</span>
               </button>
             )}
-            <button
-              aria-label={`Alternar ${node.title}`}
-              className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-white/10"
-              onClick={() => toggleMenu(node.title)}
-              type="button"
-            >
-              <ChevronDown
-                aria-hidden="true"
-                className={`transition ${iconClass} ${isOpen ? 'rotate-180' : ''}`}
-                size={16}
-              />
-            </button>
+            {!isCollapsed ? (
+              <button
+                aria-label={`Alternar ${node.title}`}
+                className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-white/10"
+                onClick={() => toggleMenu(node.title)}
+                type="button"
+              >
+                <ChevronDown
+                  aria-hidden="true"
+                  className={`transition ${iconClass} ${isOpen ? 'rotate-180' : ''}`}
+                  size={16}
+                />
+              </button>
+            ) : null}
           </div>
           {isOpen ? (
-            <div className="mt-1 grid gap-1">
+            <div
+              className={`mt-1 grid gap-1 ${
+                isCollapsed ? '' : 'ml-4 border-l border-slate-700/50 pl-2'
+              }`}
+            >
               {node.children?.map((child) => renderNode(child, depth + 1))}
             </div>
           ) : null}
@@ -253,35 +279,51 @@ export function Sidebar({ capabilities = {}, currentRole, currentPath = '' }: Si
 
     if (!resolvedHref) {
       return (
-        <div className={`${itemClass} cursor-not-allowed opacity-60`} key={node.title}>
-          <span className="flex items-center gap-3">
+        <div
+          className={`${itemClass} cursor-not-allowed opacity-60`}
+          key={node.title}
+          title={isCollapsed ? node.title : undefined}
+        >
+          <span className={contentClass}>
             <NavigationIcon className={iconClass} name={node.icon} />
-            {node.title}
+            <span className={labelClass}>{node.title}</span>
           </span>
         </div>
       );
     }
 
     return (
-      <Link className={itemClass} href={resolvedHref} key={node.title}>
-        <span className="flex items-center gap-3">
+      <Link
+        className={itemClass}
+        href={resolvedHref}
+        key={node.title}
+        title={isCollapsed ? node.title : undefined}
+      >
+        <span className={contentClass}>
           <NavigationIcon className={iconClass} name={node.icon} />
-          {node.title}
+          <span className={labelClass}>{node.title}</span>
         </span>
       </Link>
     );
   }
 
   return (
-    <aside className={`flex min-h-screen w-72 flex-col border-r ${theme.border} ${theme.shell}`}>
-      <div className="border-b border-white/10 p-4">
-        <p className={`text-xs font-semibold uppercase tracking-wide ${theme.mutedText}`}>
+    <aside className={`flex min-h-screen w-full flex-col border-r ${theme.border} ${theme.shell}`}>
+      <div className={`border-b border-white/10 ${isCollapsed ? 'p-3' : 'p-4'}`}>
+        <p className={`text-xs font-semibold uppercase tracking-wide ${theme.mutedText} ${isCollapsed ? 'hidden' : ''}`}>
           PharmaOps 360
         </p>
-        <h2 className={`mt-1 text-lg font-semibold ${theme.text}`}>{currentRole}</h2>
+        <h2 className={`mt-1 text-lg font-semibold ${theme.text} ${isCollapsed ? 'hidden' : ''}`}>
+          {currentRole}
+        </h2>
+        {isCollapsed ? (
+          <div className="flex h-10 items-center justify-center rounded-md bg-white/10 text-sm font-black text-white">
+            P360
+          </div>
+        ) : null}
       </div>
 
-      <div className="border-b border-white/10 p-3">
+      <div className={`border-b border-white/10 p-3 ${isCollapsed ? 'hidden' : ''}`}>
         <label className="relative block">
           <Search
             aria-hidden="true"
@@ -299,17 +341,37 @@ export function Sidebar({ capabilities = {}, currentRole, currentPath = '' }: Si
         </label>
       </div>
 
-      <nav className="grid gap-2 p-3">{navigation.map((node) => renderNode(node))}</nav>
+      <nav className={`grid gap-2 ${isCollapsed ? 'p-2' : 'p-3'}`}>
+        {navigation.map((node) => renderNode(node))}
+      </nav>
 
       <form action={signOutAction} className="mt-auto border-t border-white/10 p-3">
         <button
           className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition ${theme.text} ${theme.item}`}
+          title={isCollapsed ? 'Cerrar Sesión' : undefined}
           type="submit"
         >
           <LogOut aria-hidden="true" className={theme.mutedText} size={18} />
-          Cerrar Sesión
+          <span className={isCollapsed ? 'hidden' : ''}>Cerrar Sesión</span>
         </button>
       </form>
+
+      {showCollapseToggle ? (
+        <div className="hidden border-t border-white/10 p-3 md:block">
+          <button
+            aria-label={isCollapsed ? 'Expandir navegación' : 'Colapsar navegación'}
+            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+            onClick={onToggleCollapsed}
+            type="button"
+          >
+            <ChevronLeft
+              aria-hidden="true"
+              className={`h-4 w-4 transition-transform ${isCollapsed ? 'rotate-180' : ''}`}
+            />
+            <span className={isCollapsed ? 'hidden' : ''}>Colapsar</span>
+          </button>
+        </div>
+      ) : null}
     </aside>
   );
 }

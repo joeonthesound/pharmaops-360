@@ -152,6 +152,7 @@ export function AppShell({
   currentUserName,
 }: AppShellProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const pathname = usePathname();
   const initials = getInitials(currentUserName || 'P360') || 'P';
   const isTechnicianProfile = isTechnicianRole(currentRole);
@@ -164,11 +165,18 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="hidden print:hidden md:fixed md:inset-y-0 md:left-0 md:block md:w-72">
+      <div
+        className={`hidden print:hidden md:fixed md:inset-y-0 md:left-0 md:block transition-[width] duration-300 ${
+          isSidebarCollapsed ? 'md:w-16' : 'md:w-64'
+        }`}
+      >
         <Sidebar
           capabilities={currentCapabilities}
           currentRole={currentRole}
           currentPath={pathname}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
+          showCollapseToggle
         />
       </div>
 
@@ -185,12 +193,17 @@ export function AppShell({
               capabilities={currentCapabilities}
               currentRole={currentRole}
               currentPath={pathname}
+              isCollapsed={false}
             />
           </div>
         </div>
       ) : null}
 
-      <div className="min-h-screen md:pl-72 print:pl-0">
+      <div
+        className={`min-h-screen transition-[padding] duration-300 print:pl-0 ${
+          isSidebarCollapsed ? 'md:pl-16' : 'md:pl-64'
+        }`}
+      >
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white px-4 py-3 print:hidden">
           <div className="flex items-center gap-3">
             <button
