@@ -356,6 +356,14 @@ function isManagementAuthorityRole(role: string | null | undefined) {
   ].includes(normalizeRoleValue(role));
 }
 
+function isTechnicianRole(role: string | null | undefined) {
+  return ['tecnico', 'técnico', 'technician'].includes(normalizeRoleValue(role));
+}
+
+function isManualFormLifecycleStatus(status: MaintenanceStatus) {
+  return status === 'draft' || status === 'pending_technician';
+}
+
 function resolveMaintenanceAsset(record: MantenimientoRegistroConActivo | null | undefined) {
   if (Array.isArray(record?.activos)) {
     return record.activos[0] ?? null;
@@ -852,8 +860,6 @@ async function resolveVirtualEvidenceCampoId(
 const EDITABLE_MAINTENANCE_STATUSES = new Set([
   'DRAFT',
   'PENDING_TECHNICIAN',
-  'REJECTED',
-  'RECHAZADO_TECNICO',
   'BORRADOR',
 ]);
 
@@ -883,6 +889,13 @@ function resolveStatusBanner(status: MaintenanceStatus) {
     return {
       className: 'border-sky-200 bg-sky-50 text-sky-900',
       text: 'Pendiente de liberacion por calidad',
+    };
+  }
+
+  if (status === 'pending_management') {
+    return {
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+      text: 'Pendiente de cierre y sello final de gerencia',
     };
   }
 
@@ -1529,13 +1542,15 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   const responsesBySection = groupAuditResponsesBySection(orderedResponses);
   const notes = parseRecordNotes(maintenanceRecord?.notes ?? null);
   const statusBanner = resolveStatusBanner(normalizedStatus);
-  const isEditableDocument = normalizedStatus === 'draft' || normalizedStatus === 'rejected';
-  const isReadOnlyDocument = !isEditableDocument;
+  const isManualFormMode = isManualFormLifecycleStatus(normalizedStatus);
+  const isReadOnlyDocument = !isManualFormMode;
   const editableInitialResponses = buildEditableFieldResponses(orderedResponses);
   const evidencePhotos = extractEvidencePhotos(orderedResponses, (path) => {
     return supabase.storage.from(EVIDENCE_BUCKET).getPublicUrl(path).data.publicUrl;
   });
   const isAdministrativeAuthority = isAdministrativeAuthorityRole(usuario?.role);
+  const isTechnicianProfile = isTechnicianRole(usuario?.role);
+  const canRenderEditReportControls = isManualFormMode || !isTechnicianProfile;
   const supervisorCanSign =
     isAdministrativeAuthority || canRenderSupervisorSignature(usuario, maintenanceRecord?.status);
   const qualityCanSign =
@@ -1553,7 +1568,11 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
     usuarioCanReview: usuario?.can_review ?? null,
     rawRecordStatus: maintenanceRecord?.status ?? null,
     normalizedStatus,
+    viewMode: isManualFormMode ? 'FORM_MANUAL_MODE' : 'READ_ONLY_SUMMARY_MODE',
     isReadOnlyDocument,
+    isManualFormMode,
+    isTechnicianProfile,
+    canRenderEditReportControls,
     isSupervisorStep: normalizedStatus === 'pending_supervisor',
     canRenderSupervisorSignature: canRenderSupervisorSignature(usuario, maintenanceRecord?.status),
     isAdministrativeConsultation: isAdministrativeConsultationRole(usuario?.role),
@@ -1890,11 +1909,26 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
           </div>
         </section>
 
+        {isTechnicianProfile ? (
+          <section className="max-w-7xl mx-auto px-4 w-full mt-4 print:hidden">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
+              Vista resumen inmutable: el formulario manual solo se habilita para tecnicos cuando el RUI esta en
+              DRAFT o PENDING_TECHNICIAN.
+            </div>
+          </section>
+        ) : null}
+
         <div className="sticky top-0 z-20 mx-auto max-w-7xl bg-background/95 px-4 pt-6 pb-3 backdrop-blur print:hidden">
           <div className="mb-3 flex justify-end">
             <AuditLifecycleSheet
+              assetMetadata={{
+                assetCode: activoHVAC?.asset_code ?? maintenanceRecord?.asset_code ?? null,
+                assetName: activoHVAC?.asset_name ?? 'Checklist HVAC',
+                locationArea: activoHVAC ? formatLocation(activoHVAC) : null,
+              }}
               currentStatus={normalizedStatus}
               fallbackRecord={maintenanceRecord}
+              recordCode={maintenanceRecord?.record_code ?? null}
               recordUuid={maintenanceRecord?.uuid ?? requestedUuid}
             />
           </div>
@@ -2157,8 +2191,14 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         <div className="print:hidden">
           <div className="mb-3 flex justify-end">
             <AuditLifecycleSheet
+              assetMetadata={{
+                assetCode: activoHVAC?.asset_code ?? maintenanceRecord?.asset_code ?? null,
+                assetName: activoHVAC?.asset_name ?? 'Checklist HVAC',
+                locationArea: activoHVAC ? formatLocation(activoHVAC) : null,
+              }}
               currentStatus={normalizedStatus}
               fallbackRecord={maintenanceRecord}
+              recordCode={maintenanceRecord?.record_code ?? null}
               recordUuid={maintenanceRecord?.uuid ?? requestedUuid}
             />
           </div>
@@ -2186,13 +2226,14 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
           </div>
         ) : null}
 
-        {normalizedStatus === 'rejected' && maintenanceRecord?.rejection_comments ? (
-          <div className="print:hidden rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900">
-            {maintenanceRecord.rejection_comments}
+        {isReadOnlyDocument && isTechnicianProfile ? (
+          <div className="print:hidden rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
+            Vista resumen inmutable: el formulario manual solo se habilita para tecnicos cuando el RUI esta en
+            DRAFT o PENDING_TECHNICIAN.
           </div>
         ) : null}
 
-        {activoHVAC && !isReadOnlyDocument ? (
+        {activoHVAC && isManualFormMode ? (
           <ChecklistForm
             action={enviarChecklistAction}
             activoId={activoHVAC.id}

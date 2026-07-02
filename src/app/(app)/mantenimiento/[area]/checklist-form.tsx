@@ -49,6 +49,7 @@ type ChecklistFormProps = {
   maintenanceRecordUuid?: string | null;
   maintenanceStatus:
     | 'draft'
+    | 'pending_technician'
     | 'pending_supervisor'
     | 'pending_quality'
     | 'approved'

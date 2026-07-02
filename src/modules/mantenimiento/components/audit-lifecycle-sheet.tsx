@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, CheckCircle2, Clock3, Monitor, ShieldCheck, TriangleAlert, X } from 'lucide-react';
+import { BarChart3, CheckCircle2, Monitor, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import {
   fetchAuditTrailLifecycleAction,
   type AuditTrailLifecycleRow,
@@ -41,9 +41,17 @@ type DeviceSegment = {
 };
 
 type AuditLifecycleSheetProps = {
+  assetMetadata: AuditLifecycleAssetMetadata;
   currentStatus: string;
   fallbackRecord: MaintenanceAuditFallbackRecord | null;
+  recordCode: string | null;
   recordUuid: string;
+};
+
+type AuditLifecycleAssetMetadata = {
+  assetCode: string | null;
+  assetName: string | null;
+  locationArea: string | null;
 };
 
 export type MaintenanceAuditFallbackRecord = {
@@ -61,13 +69,14 @@ export type MaintenanceAuditFallbackRecord = {
   uuid: string;
 };
 
-type LifecycleStep = {
-  actionHint: string;
-  completed: boolean;
-  label: string;
-  timestamp: string | null;
-  tone: 'active' | 'approved' | 'pending' | 'rejected';
-  usuario: string | null;
+type TimelineEntry = {
+  actionLabel: string;
+  comment: string;
+  device: string;
+  isRejected: boolean;
+  operator: string;
+  roleLabel: string;
+  timestamp: string;
 };
 
 const EMPTY_AUDIT_MESSAGE =
@@ -165,35 +174,6 @@ function formatCycleHours(hours: number) {
   }
 
   return `${hours.toFixed(hours % 1 === 0 ? 0 : 1)}h`;
-}
-
-function resolveActionTone(action: string | null) {
-  const normalizedAction = String(action ?? '').toUpperCase();
-
-  if (normalizedAction.includes('REJECT')) {
-    return {
-      badge: 'border-red-200 bg-red-50 text-red-700',
-      dot: 'bg-red-600',
-      line: 'stroke-red-600',
-      icon: <TriangleAlert aria-hidden="true" className="h-4 w-4" />,
-    };
-  }
-
-  if (normalizedAction.includes('SUBMISSION') || normalizedAction.includes('APPROVE')) {
-    return {
-      badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-      dot: 'bg-emerald-600',
-      line: 'stroke-emerald-600',
-      icon: <CheckCircle2 aria-hidden="true" className="h-4 w-4" />,
-    };
-  }
-
-  return {
-    badge: 'border-amber-200 bg-amber-50 text-amber-700',
-    dot: 'bg-amber-500',
-    line: 'stroke-amber-500',
-    icon: <Clock3 aria-hidden="true" className="h-4 w-4" />,
-  };
 }
 
 function resolveDeviceType(userAgent: string | undefined): keyof DeviceMetrics {
@@ -338,119 +318,85 @@ function buildSyntheticAuditTrailRows(
   return syntheticRows.filter((row): row is AuditTrailLifecycleRow => Boolean(row));
 }
 
-function normalizeDisplayStatus(status: string) {
-  const normalizedStatus = String(status || '').trim().toUpperCase();
-
-  return normalizedStatus || 'SIN_ESTADO';
-}
-
 function resolveCurrentStatusLabel(currentStatus: string, record: MaintenanceAuditFallbackRecord | null) {
   if (record?.management_signed_at) {
     return '🔐 CERRADO INMUTABLE';
   }
 
-  return normalizeDisplayStatus(currentStatus);
+  if (currentStatus.trim()) {
+    return '⏳ EN REVISIÓN';
+  }
+
+  return '⏳ EN REVISIÓN';
 }
 
-function findFirstAction(rows: ParsedAuditRow[], pattern: RegExp) {
-  return rows.find((row) => pattern.test(String(row.accion ?? '').toUpperCase())) ?? null;
+function resolveSpanishActionLabel(action: string | null) {
+  const normalizedAction = String(action ?? '').toUpperCase();
+
+  if (normalizedAction.includes('REJECT')) {
+    return 'Rechazo con desvío';
+  }
+
+  if (normalizedAction.includes('MANAGEMENT_SEAL')) {
+    return 'Sello de Gerencia';
+  }
+
+  if (normalizedAction.includes('APPROVE') || normalizedAction.includes('SIGN')) {
+    return 'Aprobación / Firma';
+  }
+
+  if (normalizedAction.includes('CREATION') || normalizedAction.includes('SUBMISSION')) {
+    return 'Creación del Registro';
+  }
+
+  return action ?? 'Acción registrada';
 }
 
-function buildLifecycleSteps(rows: ParsedAuditRow[], currentStatus: string): LifecycleStep[] {
-  const normalizedStatus = normalizeDisplayStatus(currentStatus);
-  const submissionRow = findFirstAction(rows, /SUBMISSION|SUBMIT|DRAFT|CREATE|ADD/);
-  const approvalRows = rows.filter((row) =>
-    /APPROVE|SIGN|VALID|MANAGEMENT_SEAL/.test(String(row.accion ?? '').toUpperCase()),
-  );
-  const rejectionRow = findFirstAction(rows, /REJECT/);
-  const stepDefinitions = [
-    {
-      actionHint: 'Confeccion tecnica',
-      label: 'DRAFT',
-      row: submissionRow ?? rows[0] ?? null,
-      completed: rows.length > 0,
-    },
-    {
-      actionHint: 'Firma Supervisor',
-      label: 'PENDING_SUPERVISOR',
-      row: approvalRows[0] ?? null,
-      completed: approvalRows.length >= 1,
-    },
-    {
-      actionHint: 'Firma Calidad',
-      label: 'PENDING_QUALITY',
-      row: approvalRows[1] ?? null,
-      completed: approvalRows.length >= 2,
-    },
-    {
-      actionHint: 'Cierre Gerencia',
-      label: 'PENDING_MANAGEMENT',
-      row: approvalRows[2] ?? null,
-      completed: approvalRows.length >= 3 || /APPROVED|CLOSED/.test(normalizedStatus),
-    },
-  ];
+function resolveTimelineRole(row: ParsedAuditRow, index: number) {
+  const normalizedAction = String(row.accion ?? '').toUpperCase();
 
-  const baseSteps = stepDefinitions.map((step): LifecycleStep => {
-    const isActive = normalizedStatus === step.label;
+  if (normalizedAction.includes('MANAGEMENT')) {
+    return 'Gerencia';
+  }
+
+  if (normalizedAction.includes('REJECT')) {
+    return 'Revisión con desvío';
+  }
+
+  if (normalizedAction.includes('CREATION') || normalizedAction.includes('SUBMISSION') || index === 0) {
+    return 'Técnico';
+  }
+
+  if (index === 1) {
+    return 'Supervisor';
+  }
+
+  if (index === 2) {
+    return 'Calidad';
+  }
+
+  if (index >= 3) {
+    return 'Gerencia';
+  }
+
+  return 'Evento GxP';
+}
+
+function buildTimelineEntries(rows: ParsedAuditRow[]): TimelineEntry[] {
+  return rows.map((row, index) => {
+    const userAgent = row.parsedComments.environment_metadata?.userAgent;
+    const isRejected = String(row.accion ?? '').toUpperCase().includes('REJECT');
 
     return {
-      actionHint: step.actionHint,
-      completed: step.completed,
-      label: step.label,
-      timestamp: step.row?.timestamp ?? null,
-      tone: isActive ? 'active' : step.completed ? 'approved' : 'pending',
-      usuario: step.row?.usuario ?? null,
+      actionLabel: resolveSpanishActionLabel(row.accion),
+      comment: row.evidenceComment,
+      device: summarizeDevice(userAgent),
+      isRejected,
+      operator: row.usuario ?? 'Operador no registrado',
+      roleLabel: resolveTimelineRole(row, index),
+      timestamp: formatDateTime(row.timestamp),
     };
   });
-
-  if (rejectionRow) {
-    baseSteps.push({
-      actionHint: 'Desvio documentado',
-      completed: true,
-      label: 'REJECT_WITH_DEVIATION',
-      timestamp: rejectionRow.timestamp,
-      tone: 'rejected',
-      usuario: rejectionRow.usuario ?? null,
-    });
-  }
-
-  return baseSteps;
-}
-
-function resolveStepClasses(tone: LifecycleStep['tone']) {
-  if (tone === 'rejected') {
-    return {
-      badge: 'border-red-200 bg-red-50 text-red-700',
-      dot: 'bg-red-600',
-      line: 'stroke-red-600',
-      node: 'border-red-200 bg-red-50',
-    };
-  }
-
-  if (tone === 'approved') {
-    return {
-      badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-      dot: 'bg-emerald-600',
-      line: 'stroke-emerald-600',
-      node: 'border-emerald-200 bg-emerald-50',
-    };
-  }
-
-  if (tone === 'active') {
-    return {
-      badge: 'border-amber-200 bg-amber-50 text-amber-700',
-      dot: 'bg-amber-500',
-      line: 'stroke-amber-500',
-      node: 'border-amber-200 bg-amber-50',
-    };
-  }
-
-  return {
-    badge: 'border-slate-200 bg-slate-50 text-slate-500',
-    dot: 'bg-slate-300',
-    line: 'stroke-slate-300',
-    node: 'border-slate-200 bg-white',
-  };
 }
 
 function LoadingSkeleton() {
@@ -467,8 +413,10 @@ function LoadingSkeleton() {
 }
 
 export function AuditLifecycleSheet({
+  assetMetadata,
   currentStatus,
   fallbackRecord,
+  recordCode,
   recordUuid,
 }: AuditLifecycleSheetProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -582,10 +530,7 @@ export function AuditLifecycleSheet({
   const donutProgress = mappedRows.length > 0 ? Math.min(100, Math.max(8, Math.round(cycleHours * 4))) : 0;
   const donutCircumference = 2 * Math.PI * 44;
   const donutOffset = donutCircumference - (donutProgress / 100) * donutCircumference;
-  const lifecycleSteps = useMemo(
-    () => buildLifecycleSteps(mappedRows, currentStatusLabel),
-    [currentStatusLabel, mappedRows],
-  );
+  const timelineEntries = useMemo(() => buildTimelineEntries(mappedRows), [mappedRows]);
 
   useEffect(() => {
     if (!isOpen || isLoading || errorMessage) {
@@ -628,23 +573,23 @@ export function AuditLifecycleSheet({
 
       {isOpen ? (
         <div
-          aria-label="Forensic Lifecycle and Audit Sheet"
+          aria-label="Hoja forense de ciclo de vida y auditoría"
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm print:hidden"
           onClick={() => setIsOpen(false)}
           role="dialog"
         >
           <div
-            className="max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl"
+            className="max-w-[89vw] w-full h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">
               <div>
                 <p className="text-xs font-black uppercase tracking-wide text-emerald-700">
-                  Forensic Lifecycle & Audit Sheet
+                  Hoja Forense de Ciclo de Vida
                 </p>
                 <h2 className="mt-1 text-xl font-black text-slate-950">
-                  Métricas de ciclo de vida regulado
+                  Métricas de Ciclo de Vida Regulado
                 </h2>
                 <p className="mt-1 text-sm font-semibold text-slate-600">
                   Fuente exclusiva: public.audit_trail {targetUuid ? `(${targetUuid})` : ''}
@@ -687,13 +632,41 @@ export function AuditLifecycleSheet({
             ) : null}
 
             {!isLoading && !errorMessage && mappedRows.length > 0 ? (
-              <div className="grid gap-4 p-5">
-                <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-                  <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="grid gap-5 p-5 lg:grid-cols-[35fr_65fr]">
+                <aside className="grid content-start gap-4">
+                  <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-black uppercase tracking-wide text-emerald-700">
+                      Información del Registro
+                    </p>
+                    <dl className="mt-4 grid gap-3 text-sm">
+                      <div>
+                        <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">RUI UUID</dt>
+                        <dd className="mt-1 break-all font-mono text-xs font-bold text-slate-900">{targetUuid}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Código de Registro</dt>
+                        <dd className="mt-1 font-bold text-slate-900">{recordCode ?? 'Sin código registrado'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Datos del Activo</dt>
+                        <dd className="mt-1 font-bold text-slate-900">
+                          {assetMetadata.assetName ?? 'Activo no disponible'}
+                        </dd>
+                        <dd className="text-xs font-semibold text-slate-600">
+                          {assetMetadata.assetCode ?? 'Código no disponible'}
+                        </dd>
+                        <dd className="text-xs font-semibold text-slate-600">
+                          {assetMetadata.locationArea ?? 'Ubicación no disponible'}
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
+
+                  <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                          Authorized Devices
+                          Dispositivos Autorizados
                         </p>
                         <p className="mt-1 text-sm font-semibold text-slate-700">
                           {authorizedDevicePercent}% de eventos con dispositivo identificado
@@ -713,35 +686,28 @@ export function AuditLifecycleSheet({
                         ))}
                       </div>
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-slate-600 sm:grid-cols-3">
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-slate-600">
                       {Object.entries(deviceMetricsObject.percentages).map(([label, percent]) => (
                         <span key={label}>
                           {label}: {percent}%
                         </span>
                       ))}
                     </div>
-                  </article>
+                  </section>
 
-                  <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                          Total Cycle Time
+                          Tiempo Total de Ciclo
                         </p>
                         <p className="mt-2 text-3xl font-black text-slate-950">{cycleLabel}</p>
                         <p className="mt-1 text-xs font-semibold text-slate-500">
                           {mappedRows.length} eventos auditados, {rejectionCount} desvío(s)
                         </p>
                       </div>
-                      <svg aria-label="Indicador circular de ciclo total" className="h-28 w-28" viewBox="0 0 112 112">
-                        <circle
-                          cx="56"
-                          cy="56"
-                          fill="transparent"
-                          r="44"
-                          stroke="#E2E8F0"
-                          strokeWidth="12"
-                        />
+                      <svg aria-label="Indicador circular de tiempo total de ciclo" className="h-28 w-28" viewBox="0 0 112 112">
+                        <circle cx="56" cy="56" fill="transparent" r="44" stroke="#E2E8F0" strokeWidth="12" />
                         <circle
                           cx="56"
                           cy="56"
@@ -754,136 +720,83 @@ export function AuditLifecycleSheet({
                           strokeWidth="12"
                           transform="rotate(-90 56 56)"
                         />
-                        <text
-                          className="fill-slate-900 text-sm font-black"
-                          dominantBaseline="middle"
-                          textAnchor="middle"
-                          x="56"
-                          y="52"
-                        >
+                        <text className="fill-slate-900 text-sm font-black" dominantBaseline="middle" textAnchor="middle" x="56" y="52">
                           {cycleLabel}
                         </text>
-                        <text
-                          className="fill-slate-500 text-[9px] font-bold"
-                          dominantBaseline="middle"
-                          textAnchor="middle"
-                          x="56"
-                          y="68"
-                        >
+                        <text className="fill-slate-500 text-[9px] font-bold" dominantBaseline="middle" textAnchor="middle" x="56" y="68">
                           ciclo
                         </text>
                       </svg>
                     </div>
-                  </article>
-                </section>
+                  </section>
+                </aside>
 
                 <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                        Sankey / Timeline Flowchart
+                        Bitácora Vertical de Firmas
                       </p>
                       <h3 className="mt-1 text-base font-black text-slate-950">
-                        Flujo de acciones humanas y desvíos
+                        Flujo de validación humana y comentarios GxP
                       </h3>
                     </div>
                     <ShieldCheck aria-hidden="true" className="h-7 w-7 text-emerald-700" />
                   </div>
 
-                  <div className="mt-5 overflow-x-auto">
-                    <div className="grid min-w-[720px] grid-flow-col auto-cols-fr items-center gap-3">
-                      {lifecycleSteps.map((step, index) => {
-                        const stepClasses = resolveStepClasses(step.tone);
-
-                        return (
-                          <div className="relative flex items-center" key={`${step.label}-${index}`}>
-                            <div className={`min-w-0 rounded-xl border p-3 ${stepClasses.node}`}>
-                              <div className="flex items-center gap-2">
-                                <span className={`h-3 w-3 rounded-full ${stepClasses.dot}`} />
-                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-black uppercase ${stepClasses.badge}`}>
-                                  {step.tone === 'rejected' ? (
-                                    <TriangleAlert aria-hidden="true" className="h-4 w-4" />
-                                  ) : step.completed ? (
-                                    <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
-                                  ) : (
-                                    <Clock3 aria-hidden="true" className="h-4 w-4" />
-                                  )}
-                                  {step.label}
-                                </span>
-                              </div>
-                              <p className="mt-3 text-xs font-black text-slate-900">
-                                {step.actionHint}
-                              </p>
-                              <p className="mt-3 truncate text-xs font-bold text-slate-900">
-                                {step.usuario ?? 'Operador pendiente'}
-                              </p>
-                              <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                                {step.timestamp ? formatDateTime(step.timestamp) : 'Sin firma registrada'}
-                              </p>
+                  <ol className="mt-5 space-y-5 border-l-2 border-emerald-500 pl-5">
+                    {timelineEntries.map((entry, index) => (
+                      <li className="relative" key={`${entry.timestamp}-${entry.operator}-${index}`}>
+                        <span
+                          className={`absolute -left-[30px] top-1 flex h-5 w-5 items-center justify-center rounded-full border-4 border-white ${
+                            entry.isRejected ? 'bg-red-600' : 'bg-emerald-600'
+                          }`}
+                          aria-hidden="true"
+                        />
+                        <article
+                          className={`rounded-xl border p-4 ${
+                            entry.isRejected ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <span
+                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-black uppercase ${
+                                  entry.isRejected
+                                    ? 'border-red-200 bg-white text-red-700'
+                                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                }`}
+                              >
+                                {entry.isRejected ? (
+                                  <TriangleAlert aria-hidden="true" className="h-4 w-4" />
+                                ) : (
+                                  <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                                )}
+                                {entry.roleLabel}: {entry.operator}
+                              </span>
+                              <p className="mt-2 text-sm font-black text-slate-950">{entry.actionLabel}</p>
                             </div>
-                            {index < lifecycleSteps.length - 1 ? (
-                              <svg aria-hidden="true" className="mx-2 h-12 w-16 shrink-0" viewBox="0 0 64 48">
-                                <path
-                                  className={stepClasses.line}
-                                  d="M2 24 C20 4, 42 4, 62 24"
-                                  fill="none"
-                                  strokeWidth="3"
-                                />
-                                <path d="M55 18 L62 24 L55 30" fill="none" stroke="#334155" strokeWidth="2" />
-                              </svg>
-                            ) : null}
+                            <time className="font-mono text-xs font-bold text-slate-600">{entry.timestamp}</time>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </section>
 
-                <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                    Bottom Trail Log
-                  </p>
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                      <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-3 py-2">Time</th>
-                          <th className="px-3 py-2">Operator</th>
-                          <th className="px-3 py-2">Action</th>
-                          <th className="px-3 py-2">Comments</th>
-                          <th className="px-3 py-2">Device</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {mappedRows.map((row, index) => {
-                          const tone = resolveActionTone(row.accion);
-                          const userAgent = row.parsedComments.environment_metadata?.userAgent;
+                          <div
+                            className={`mt-4 rounded-lg border p-3 ${
+                              entry.isRejected ? 'border-red-200 bg-[#FEF2F2] text-red-700' : 'border-slate-200 bg-white text-slate-700'
+                            }`}
+                          >
+                            <p className="text-[11px] font-black uppercase tracking-wide">
+                              Comentarios de Validación GxP
+                            </p>
+                            <p className="mt-1 text-sm font-semibold leading-6">{entry.comment}</p>
+                          </div>
 
-                          return (
-                            <tr key={`${row.timestamp}-${row.usuario}-${index}`} className="align-top">
-                              <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-700">
-                                {formatDateTime(row.timestamp)}
-                              </td>
-                              <td className="px-3 py-3 font-semibold text-slate-900">
-                                {row.usuario ?? 'N/A'}
-                              </td>
-                              <td className="px-3 py-3">
-                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-black uppercase ${tone.badge}`}>
-                                  {row.accion ?? 'SIN_ACCION'}
-                                </span>
-                              </td>
-                              <td className="max-w-md px-3 py-3 text-slate-700">
-                                {row.evidenceComment}
-                              </td>
-                              <td className="px-3 py-3 text-xs font-semibold text-slate-500">
-                                {summarizeDevice(userAgent)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          <p className="mt-3 text-xs font-semibold text-slate-500">
+                            Dispositivo: {entry.device}
+                          </p>
+                        </article>
+                      </li>
+                    ))}
+                  </ol>
                 </section>
               </div>
             ) : null}
