@@ -65,6 +65,7 @@ type PayloadFilaDB = {
 
 type MaintenanceStatus =
   | 'draft'
+  | 'pending_technician'
   | 'pending_supervisor'
   | 'pending_quality'
   | 'pending_management'
@@ -248,6 +249,8 @@ function normalizeMaintenanceStatus(status: string | null | undefined): Maintena
   if (
     normalizedStatus === 'draft' ||
     normalizedStatus === 'borrador' ||
+    normalizedStatus === 'pending_technician' ||
+    normalizedStatus === 'pendiente_tecnico' ||
     normalizedStatus === 'pending_supervisor' ||
     normalizedStatus === 'pendiente_supervisor' ||
     normalizedStatus === 'pending_quality' ||
@@ -264,6 +267,10 @@ function normalizeMaintenanceStatus(status: string | null | undefined): Maintena
   ) {
     if (normalizedStatus === 'borrador') {
       return 'draft';
+    }
+
+    if (normalizedStatus === 'pendiente_tecnico') {
+      return 'pending_technician';
     }
 
     if (normalizedStatus === 'pendiente_supervisor') {
@@ -404,6 +411,7 @@ function buildApprovalTimeline(status: MaintenanceStatus, isManagementSigned: bo
   const stageIndexByStatus: Record<MaintenanceStatus, number> = {
     draft: 0,
     rejected: 0,
+    pending_technician: 0,
     pending_supervisor: 1,
     pending_quality: 2,
     pending_management: 3,
@@ -951,6 +959,28 @@ async function enviarChecklistAction(formData: FormData): Promise<ChecklistSubmi
     String(formData.get('technical_observations') ?? ''),
   );
   const submittedKeys = Array.from(formData.keys());
+
+  if (ENABLE_SUPERADMIN_DEBUG_LOGS && technicianEmail) {
+    const { data: userProfile } = await supabase
+      .from('usuarios_roles')
+      .select('user_email, role')
+      .eq('user_email', technicianEmail)
+      .eq('active', true)
+      .maybeSingle();
+
+    if (userProfile?.role?.toLowerCase() === 'administrativo') {
+      console.log('[MUTACION ESCRITURA DIAGNOSTICO P360]', {
+        action: maintenanceRecordUuid ? 'EDIT_CHECKLIST_AND_SUBMIT' : 'ADD_CHECKLIST_AND_SUBMIT',
+        recordUuid: maintenanceRecordUuid || null,
+        operatorEmail: userProfile.user_email ?? technicianEmail,
+        operatorRole: userProfile.role,
+        hasAuditTrailReason: !!technicalObservations,
+        payloadCommentsLength: technicalObservations?.length || 0,
+        targetReturnStage: 'PENDING_SUPERVISOR',
+        submittedKeys,
+      });
+    }
+  }
 
   if (!assetUuid) {
     return {

@@ -4,6 +4,8 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 
+const ENABLE_SUPERADMIN_DEBUG_LOGS = false;
+
 export type MaintenanceSigningRole = 'supervisor' | 'quality' | 'management';
 export type MaintenanceSigningAction = 'approve' | 'reject';
 export type DirectedRejectionReturnStage = 'DRAFT' | 'PENDING_SUPERVISOR' | 'PENDING_QUALITY';
@@ -18,6 +20,7 @@ export type SignMaintenanceRecordInput = {
     deviceTimestamp: string;
     clientIp: string;
     userAgent: string;
+    activePath?: string;
   };
 };
 
@@ -42,17 +45,20 @@ export type DirectedRejectionInput = {
     deviceTimestamp: string;
     clientIp: string;
     userAgent: string;
+    activePath?: string;
   };
 };
 
 type MaintenanceRecordStatus =
   | 'draft'
+  | 'pending_technician'
   | 'pending_supervisor'
   | 'pending_quality'
   | 'pending_management'
   | 'approved'
   | 'rejected'
   | 'DRAFT'
+  | 'PENDING_TECHNICIAN'
   | 'PENDING_SUPERVISOR'
   | 'PENDING_QUALITY'
   | 'PENDING_MANAGEMENT'
@@ -72,11 +78,13 @@ type ClientSignatureMetadata = {
   deviceTimestamp: string;
   clientIp: string;
   userAgent: string;
+  activePath?: string;
 };
 
 type MantenimientoRegistroFirma = {
   uuid: string;
   status: MaintenanceRecordStatus | string | null;
+  notes?: string | null;
 };
 
 type DirectedRejectionResult = {
@@ -96,6 +104,13 @@ type AuditInsertResult = {
   error?: unknown;
 };
 
+type SupabaseMutationError = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+} | null;
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -110,6 +125,7 @@ function sanitizeInput(input: SignMaintenanceRecordInput) {
       deviceTimestamp: String(input.clientMetadata?.deviceTimestamp ?? '').trim(),
       clientIp: String(input.clientMetadata?.clientIp ?? 'client-ip-pending-server-capture').trim(),
       userAgent: String(input.clientMetadata?.userAgent ?? '').trim(),
+      activePath: String(input.clientMetadata?.activePath ?? '').trim() || undefined,
     },
   };
 }
@@ -132,6 +148,8 @@ function normalizeMaintenanceRecordStatus(
   if (
     normalizedStatus === 'draft' ||
     normalizedStatus === 'borrador' ||
+    normalizedStatus === 'pending_technician' ||
+    normalizedStatus === 'pendiente_tecnico' ||
     normalizedStatus === 'pending_supervisor' ||
     normalizedStatus === 'pendiente_supervisor' ||
     normalizedStatus === 'pending_quality' ||
@@ -146,6 +164,10 @@ function normalizeMaintenanceRecordStatus(
   ) {
     if (normalizedStatus === 'borrador') {
       return 'draft';
+    }
+
+    if (normalizedStatus === 'pendiente_tecnico') {
+      return 'pending_technician';
     }
 
     if (normalizedStatus === 'pendiente_supervisor') {
@@ -253,24 +275,70 @@ function canSignAsManagement(permisos: UsuarioRolPermisos, signerEmail: string) 
   );
 }
 
+function isAdministrativeAuthorityProfile(permisos: Pick<UsuarioRolPermisos, 'role'>) {
+  return normalizeRoleValue(permisos.role) === 'administrativo';
+}
+
+function logCriticalSupabaseMutationError(
+  error: SupabaseMutationError | unknown,
+  context: Record<string, unknown>,
+) {
+  if (!error || typeof error !== 'object') {
+    return;
+  }
+
+  const supabaseError = error as SupabaseMutationError;
+
+  console.error('🚨 [ERROR CRITICO MUTACION SUPABASE P360]', {
+    ...context,
+    code: supabaseError?.code,
+    message: supabaseError?.message,
+    details: supabaseError?.details,
+    hint: supabaseError?.hint,
+  });
+}
+
+function normalizeDirectedRejectionReturnStage(
+  returnStage: DirectedRejectionReturnStage | string | null | undefined,
+): DirectedRejectionReturnStage {
+  const normalizedStage = String(returnStage ?? '').trim().toUpperCase();
+
+  if (normalizedStage === 'PENDING_TECHNICIAN') {
+    return 'DRAFT';
+  }
+
+  return normalizedStage as DirectedRejectionReturnStage;
+}
+
 function sanitizeDirectedRejectionInput(input: DirectedRejectionInput) {
   return {
     recordUuid: String(input.recordUuid ?? '').trim(),
-    returnStage: input.returnStage,
+    returnStage: normalizeDirectedRejectionReturnStage(input.returnStage),
     returnStageLabel: String(input.returnStageLabel ?? '').trim(),
     deviationDescription: String(input.deviationDescription ?? '').trim(),
     clientMetadata: {
       deviceTimestamp: String(input.clientMetadata?.deviceTimestamp ?? '').trim(),
       clientIp: String(input.clientMetadata?.clientIp ?? 'client-ip-pending-server-capture').trim(),
       userAgent: String(input.clientMetadata?.userAgent ?? '').trim(),
+      activePath: String(input.clientMetadata?.activePath ?? '').trim() || undefined,
     },
   };
+}
+
+function revalidateActiveMaintenancePath(activePath: string | undefined) {
+  if (activePath?.startsWith('/mantenimiento/')) {
+    revalidatePath(activePath);
+  }
 }
 
 function resolveAllowedReturnStages(
   status: MaintenanceRecordStatus | string | null,
 ): DirectedRejectionReturnStage[] {
   const normalizedStatus = normalizeMaintenanceRecordStatus(status);
+
+  if (normalizedStatus === 'pending_technician') {
+    return ['DRAFT'];
+  }
 
   if (normalizedStatus === 'pending_supervisor') {
     return ['DRAFT'];
@@ -315,6 +383,10 @@ function resolveApprovedStatus(signingRole: MaintenanceSigningRole): Maintenance
 function canReviewAsSupervisorOrHigher(permisos: UsuarioRolPermisos) {
   const normalizedRole = normalizeRoleValue(permisos.role);
 
+  if (normalizedRole === 'administrativo') {
+    return true;
+  }
+
   return (
     permisos.can_review === true ||
     [
@@ -327,6 +399,64 @@ function canReviewAsSupervisorOrHigher(permisos: UsuarioRolPermisos) {
       'gerente general',
     ].includes(normalizedRole)
   );
+}
+
+function appendRejectionAuditTrailToNotes({
+  existingNotes,
+  auditTrailReasonText,
+  operatorEmail,
+  operatorRole,
+  selectedStage,
+  selectedStageLabel,
+  previousStatus,
+  timestamp,
+  clientMetadata,
+}: {
+  existingNotes: string | null | undefined;
+  auditTrailReasonText: string;
+  operatorEmail: string;
+  operatorRole: string | null;
+  selectedStage: DirectedRejectionReturnStage;
+  selectedStageLabel: string;
+  previousStatus: MantenimientoRegistroFirma['status'];
+  timestamp: string;
+  clientMetadata: ClientSignatureMetadata;
+}) {
+  const fallbackNotes = { raw_notes: existingNotes };
+  let parsedNotes: Record<string, unknown> = {};
+
+  if (existingNotes) {
+    try {
+      const parsed = JSON.parse(existingNotes) as unknown;
+      parsedNotes = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : fallbackNotes;
+    } catch {
+      parsedNotes = fallbackNotes;
+    }
+  }
+
+  const previousTrail = Array.isArray(parsedNotes.rejection_audit_trail)
+    ? parsedNotes.rejection_audit_trail
+    : [];
+
+  return JSON.stringify({
+    ...parsedNotes,
+    rejection_audit_trail: [
+      ...previousTrail,
+      {
+        action: 'REJECT_WITH_DEVIATION',
+        audit_trail_reason: auditTrailReasonText,
+        operator_email: operatorEmail,
+        operator_role: operatorRole,
+        previous_status: previousStatus,
+        target_return_stage: selectedStage,
+        target_return_stage_label: selectedStageLabel,
+        timestamp,
+        environment_metadata: clientMetadata,
+      },
+    ],
+  });
 }
 
 function buildSignaturePatch(
@@ -545,7 +675,23 @@ export async function signMaintenanceRecordAction(
   }
 
   const permisos = usuario as UsuarioRolPermisos;
+  const userProfile = permisos;
   const userMetadata = user?.user_metadata as { role?: string | null } | null;
+
+  if (ENABLE_SUPERADMIN_DEBUG_LOGS && userProfile?.role?.toLowerCase() === 'administrativo') {
+    const auditTrailReasonText = action === 'reject' ? rejectionComments : validationComments;
+
+    console.log('[MUTACION ESCRITURA DIAGNOSTICO P360]', {
+      action: action === 'reject' ? 'REJECT_SIGNATURE' : 'APPROVE_SIGNATURE',
+      recordUuid,
+      operatorEmail: userProfile.user_email ?? signerEmail,
+      operatorRole: userProfile.role,
+      signingRole,
+      hasAuditTrailReason: !!auditTrailReasonText,
+      payloadCommentsLength: auditTrailReasonText?.length || 0,
+      targetReturnStage: action === 'reject' ? 'REJECTED' : resolveApprovedStatus(signingRole),
+    });
+  }
 
   console.log('[DEBUG QA SECURITY GUARD]', {
     userEmail: user?.email,
@@ -684,6 +830,14 @@ export async function signMaintenanceRecordAction(
   });
 
   if (!auditResult.ok) {
+    logCriticalSupabaseMutationError(auditResult.error, {
+      action: 'SIGNATURE_AUDIT_INSERT',
+      recordUuid,
+      signerEmail,
+      signingRole,
+      signingAction: action,
+    });
+
     console.error('[ALERTA AUDITORIA GxP] Firma bloqueada por fallo de audit trail', {
       recordUuid,
       signerEmail,
@@ -712,6 +866,15 @@ export async function signMaintenanceRecordAction(
     .single();
 
   if (updateError || !updatedRecord) {
+    logCriticalSupabaseMutationError(updateError, {
+      action: 'SIGNATURE_UPDATE',
+      recordUuid,
+      signerEmail,
+      signingRole,
+      signingAction: action,
+      attemptedStatus: updatePayload.status,
+    });
+
     console.error('[ALERTA AUDITORIA GxP] Error al estampar firma electronica', {
       recordUuid,
       signerEmail,
@@ -738,6 +901,7 @@ export async function signMaintenanceRecordAction(
   revalidatePath(`/mantenimiento/${recordUuid}/aprobar`);
   revalidatePath(`/mantenimiento/hvac/rui/enviado/${recordUuid}`);
   revalidatePath(`/mantenimiento/hvac/rui/ht/${recordUuid}`);
+  revalidateActiveMaintenancePath(clientMetadata.activePath);
   revalidatePath('/mantenimiento/hvac/page');
   revalidatePath('/mantenimiento/hvac');
   revalidatePath(`/mantenimiento/hvac/rui/ht`);
@@ -843,8 +1007,25 @@ export async function rejectMaintenanceWithDeviationAction(
   }
 
   const permisos = usuario as UsuarioRolPermisos;
+  const userProfile = permisos;
+  const isAdministrativeAuthority = isAdministrativeAuthorityProfile(userProfile);
+  const auditTrailReasonText = deviationDescription;
+  const selectedStage = returnStage;
+  const operatorEmail = userProfile.user_email ?? supervisorEmail;
 
-  if (!canReviewAsSupervisorOrHigher(permisos)) {
+  if (ENABLE_SUPERADMIN_DEBUG_LOGS && userProfile?.role?.toLowerCase() === 'administrativo') {
+    console.log('[MUTACION ESCRITURA DIAGNOSTICO P360]', {
+      action: 'REJECT_WITH_DEVIATION',
+      recordUuid,
+      operatorEmail,
+      operatorRole: userProfile.role,
+      hasAuditTrailReason: !!auditTrailReasonText,
+      payloadCommentsLength: auditTrailReasonText?.length || 0,
+      targetReturnStage: selectedStage,
+    });
+  }
+
+  if (!isAdministrativeAuthority && !canReviewAsSupervisorOrHigher(permisos)) {
     return {
       ok: false,
       message: 'Usuario sin perfil Supervisor o superior para rechazo con desvio.',
@@ -858,7 +1039,7 @@ export async function rejectMaintenanceWithDeviationAction(
 
   const { data: record, error: recordError } = await supabase
     .from('mantenimientos_registros')
-    .select('uuid, status')
+    .select('uuid, status, notes')
     .eq('uuid', recordUuid)
     .maybeSingle();
 
@@ -899,6 +1080,17 @@ export async function rejectMaintenanceWithDeviationAction(
   const updatePayload = {
     status: returnStage,
     rejection_comments: deviationDescription,
+    notes: appendRejectionAuditTrailToNotes({
+      existingNotes: maintenanceRecord.notes,
+      auditTrailReasonText,
+      operatorEmail: supervisorEmail,
+      operatorRole: permisos.role,
+      selectedStage,
+      selectedStageLabel: returnStageLabel,
+      previousStatus: maintenanceRecord.status,
+      timestamp,
+      clientMetadata,
+    }),
     supervisor_signed_by: supervisorEmail,
     supervisor_signed_at: timestamp,
   };
@@ -910,6 +1102,15 @@ export async function rejectMaintenanceWithDeviationAction(
     .eq('status', maintenanceRecord.status);
 
   if (updateError) {
+    logCriticalSupabaseMutationError(updateError, {
+      action: 'REJECT_WITH_DEVIATION_UPDATE',
+      recordUuid,
+      operatorEmail,
+      previousStatus: maintenanceRecord.status,
+      attemptedStatus: updatePayload.status,
+      selectedStage,
+    });
+
     return {
       ok: false,
       message: 'No fue posible retornar el registro al flujo tecnico.',
@@ -922,45 +1123,65 @@ export async function rejectMaintenanceWithDeviationAction(
   }
 
   const auditPayload = {
-    usuario_email: supervisorEmail,
-    usuario_id: user.id,
+    entity: 'mantenimientos_registros',
+    entity_uuid: recordUuid,
+    usuario: operatorEmail,
+    accion: 'REJECT_WITH_DEVIATION',
     timestamp,
-    accion: 'RECHAZAR_CON_DESVIO',
-    justificacion: deviationDescription,
-    payload_snapshot: {
-      entity: 'mantenimientos_registros',
-      record_uuid: recordUuid,
-      previous_status: maintenanceRecord.status,
-      next_status: returnStage,
-      return_stage: returnStage,
-      return_stage_label: returnStageLabel,
-      deviation_description: deviationDescription,
-      environment_metadata: clientMetadata,
-    },
-    entidad: 'mantenimientos_registros',
-    entidad_uuid: recordUuid,
+    comentarios: JSON.stringify({
+      validation_comments: null,
+      rejection_comments: auditTrailReasonText,
+      environment_metadata: {
+        ...clientMetadata,
+        previous_status: maintenanceRecord.status,
+        next_status: returnStage,
+        return_stage: returnStage,
+        return_stage_label: returnStageLabel,
+        operator_role: permisos.role,
+        operator_user_id: user.id,
+      },
+    }),
   };
 
   const { error: auditError } = await supabase
-    .from('auditoria_log_cambios')
+    .from('audit_trail')
     .insert(auditPayload);
 
   if (auditError) {
-    await supabase
+    logCriticalSupabaseMutationError(auditError, {
+      action: 'REJECT_WITH_DEVIATION_AUDIT_INSERT',
+      recordUuid,
+      operatorEmail,
+      previousStatus: maintenanceRecord.status,
+      attemptedStatus: updatePayload.status,
+      selectedStage,
+    });
+
+    const { error: rollbackError } = await supabase
       .from('mantenimientos_registros')
       .update({
         status: maintenanceRecord.status,
         rejection_comments: null,
+        notes: maintenanceRecord.notes ?? null,
         supervisor_signed_by: null,
         supervisor_signed_at: null,
       })
       .eq('uuid', recordUuid);
 
+    if (rollbackError) {
+      logCriticalSupabaseMutationError(rollbackError, {
+        action: 'REJECT_WITH_DEVIATION_ROLLBACK',
+        recordUuid,
+        operatorEmail,
+        rollbackStatus: maintenanceRecord.status,
+      });
+    }
+
     return {
       ok: false,
       message: 'No fue posible registrar la pista de auditoria. La mutacion fue revertida.',
       debug: {
-        stage: 'auditoria_log_cambios_insert',
+        stage: 'audit_trail_insert',
         code: auditError.code,
         details: auditError,
       },
@@ -969,6 +1190,10 @@ export async function rejectMaintenanceWithDeviationAction(
 
   revalidatePath(`/mantenimiento/${recordUuid}`);
   revalidatePath(`/mantenimiento/${recordUuid}/aprobar`);
+  revalidatePath(`/mantenimiento/hvac/rui/enviado/${recordUuid}`);
+  revalidatePath(`/mantenimiento/hvac/rui/ht/${recordUuid}`);
+  revalidateActiveMaintenancePath(clientMetadata.activePath);
+  revalidatePath('/mantenimiento/hvac');
   revalidatePath('/dashboard');
 
   return {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { X } from 'lucide-react';
 import {
@@ -13,6 +13,7 @@ import {
 
 type MaintenanceStatus =
   | 'draft'
+  | 'pending_technician'
   | 'pending_supervisor'
   | 'pending_quality'
   | 'pending_management'
@@ -117,6 +118,7 @@ export function SignatureReviewCard({
   status,
 }: SignatureReviewCardProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const returnStageOptions = resolveReturnStageOptions(status);
   const defaultReturnStage = returnStageOptions[0]?.value ?? 'DRAFT';
   const [signatureIntent, setSignatureIntent] = useState<SignatureIntent>(null);
@@ -185,6 +187,7 @@ export function SignatureReviewCard({
             deviceTimestamp: new Date().toISOString(),
             clientIp: 'client-ip-pending-server-capture',
             userAgent: navigator.userAgent,
+            activePath: pathname,
           },
         });
 
@@ -213,6 +216,7 @@ export function SignatureReviewCard({
         deviceTimestamp: new Date().toISOString(),
         clientIp: 'client-ip-pending-server-capture',
         userAgent: navigator.userAgent,
+        activePath: pathname,
       };
 
       const result = await signMaintenanceRecordAction({
