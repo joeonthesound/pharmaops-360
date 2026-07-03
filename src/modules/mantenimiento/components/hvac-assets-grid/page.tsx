@@ -56,8 +56,8 @@ type MantenimientoRegistro = {
   supervisor_signed_at?: string | null;
   quality_signed_by?: string | null;
   quality_signed_at: string | null;
-  management_signed_by?: string | null;
-  management_signed_at?: string | null;
+  management_signed_by: string | null;
+  management_signed_at: string | null;
   notes?: string | null;
   field_responses_payload?: unknown;
   rejection_comments?: string | null;
@@ -758,6 +758,27 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const historyOrders = dashboardOrders;
   const visibleOrders = dashboardOrders;
 
+  console.log('==========================================================================');
+  console.log(
+    '🔬 AUDITORÍA INTERNA GXP - TOTAL TARJETAS RECIBIDAS IN SERVER:',
+    visibleOrders?.length,
+  );
+  console.log('📊 CONTENIDO EXACTO DEL MAPEO DE ÓRDENES:');
+  console.log(
+    JSON.stringify(
+      visibleOrders?.map((r: any) => ({
+        id: r.id,
+        record_code: r.record_code,
+        raw_status_db: r.status,
+        has_quality_signature: !!r.quality_signed_at,
+        has_management_signature: !!r.management_signed_at,
+      })),
+      null,
+      2,
+    ),
+  );
+  console.log('==========================================================================');
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950">
       <GridRefreshOnMount />
@@ -824,7 +845,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         {!queryError && currentView !== 'history' ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {visibleOrders.map((registro) => {
-              if (currentView === 'pending' && registro.status === 'CLOSED') {
+              const isFullySigned =
+                registro.management_signed_by !== null || registro.management_signed_at !== null;
+              const trueCanonicalStatus = isFullySigned ? 'CLOSED' : registro.status;
+
+              if (currentView === 'pending' && trueCanonicalStatus === 'CLOSED') {
                 return null;
               }
 
@@ -836,10 +861,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               const daysRemaining = calculateDaysRemaining(
                 registro.scheduled_date ?? activo?.next_maintenance_date,
               );
-              const canonicalStatus = normalizeMaintenanceStatus(registro.status);
+              const canonicalStatus = normalizeMaintenanceStatus(trueCanonicalStatus);
               const statusClassName = orderStatusClasses[canonicalStatus];
               const statusLabel =
-                canonicalStatus === 'approved' ? '🔐 REGISTRO CERRADO' : orderStatusLabel[canonicalStatus];
+                trueCanonicalStatus === 'CLOSED'
+                  ? '🔐 REGISTRO CERRADO'
+                  : orderStatusLabel[canonicalStatus];
               const isRejected = canonicalStatus === 'rejected';
               const actionHref = getOrderHref(registro, activo);
               const signatureProgress = resolveSignatureProgress(registro);
