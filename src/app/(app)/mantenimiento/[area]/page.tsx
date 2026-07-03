@@ -2304,14 +2304,6 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                     {formatDateTimeUtc(maintenanceRecord?.executed_at ?? notes.captured_at)}
                   </p>
                 </div>
-                <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                    GxP Legal Meaning
-                  </p>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-slate-700">
-                    Confeccion del registro tecnico bajo accion afirmativa del operador.
-                  </p>
-                </div>
                 {/* RECONCILIACION DE COMENTARIO GXP */}
                 <div className="mt-3 block border-t border-slate-100 pt-2">
                   <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
