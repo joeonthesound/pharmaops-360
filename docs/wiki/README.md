@@ -19,6 +19,7 @@ Este directorio documenta de forma modular el estado funcional, tecnico y GxP de
 - [12 - Supabase: Definicion y Replicacion de Base de Datos](./12-supabase-replicacion-db.md)
 - [13 - SuperAdmin D10S y Cabina de Control](./13-superadmin-d10s-cabina-control.md)
 - [14 - Portal Auditor y Copias Controladas](./14-portal-auditor-copias-controladas.md)
+- [15 - Motor de Notificaciones GxP y Web Push](./15-notificaciones-web-push-gxp.md)
 
 ## Guia Rapida por Perfil
 
@@ -28,6 +29,7 @@ Este directorio documenta de forma modular el estado funcional, tecnico y GxP de
 - Gerencia de Operaciones: revisar cierres institucionales, indicadores operativos y estados finales cuando aplique.
 - Tecnico de Mantenimiento: ejecutar registros RUI desde vista movil, completar checklist, capturar evidencias y enviar a revision.
 - Auditor Externo: usar `/auditoria` para muestreo de expedientes cerrados, ficha forense y copias controladas de solo lectura.
+- Motor de Notificaciones: usar `public.notificaciones` como fuente futura para alertas in-app, badge realtime y Web Push PWA.
 
 ## Convenciones
 

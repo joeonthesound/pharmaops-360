@@ -3,7 +3,13 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Bell, ChevronRight, LayoutDashboard, Menu, UserCircle } from 'lucide-react';
+import { ChevronRight, LayoutDashboard, Menu, UserCircle } from 'lucide-react';
+import {
+  NotificationsBell,
+  type NotificationItem,
+} from '@/components/ui/notifications-bell';
+import { registerNotificationsServiceWorker } from '@/lib/notifications/register-sw';
+import type { NotificationRoleContext } from '@/types/database.types';
 import { Sidebar } from './sidebar';
 import { supabase } from '@/shared/lib/supabase';
 
@@ -13,6 +19,7 @@ type AppShellProps = {
     can_approve?: boolean;
     can_create_assets?: boolean;
   };
+  currentNotifications?: NotificationItem[];
   currentUserEmail: string;
   currentRole: string;
   currentUserName: string;
@@ -31,6 +38,32 @@ function isTechnicianRole(role: string) {
   const normalizedRole = role.toLowerCase();
 
   return normalizedRole.includes('tecnico') || normalizedRole.includes('técnico');
+}
+
+function resolveNotificationRoleContext(role: string): NotificationRoleContext {
+  const normalizedRole = role
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (normalizedRole.includes('tecnico') || normalizedRole.includes('technician')) {
+    return 'technician';
+  }
+
+  if (normalizedRole.includes('supervisor')) {
+    return 'supervisor';
+  }
+
+  if (
+    normalizedRole.includes('calidad') ||
+    normalizedRole.includes('quality') ||
+    normalizedRole.includes('qa')
+  ) {
+    return 'quality';
+  }
+
+  return 'management';
 }
 
 function resolveProfileRoleSlug(role: string) {
@@ -173,6 +206,7 @@ function DynamicBreadcrumbs({ pathname }: { pathname: string }) {
 export function AppShell({
   children,
   currentCapabilities = {},
+  currentNotifications = [],
   currentRole,
   currentUserEmail,
   currentUserName,
@@ -182,6 +216,7 @@ export function AppShell({
   const pathname = usePathname();
   const initials = getInitials(currentUserName || 'P360') || 'P';
   const isTechnicianProfile = isTechnicianRole(currentRole);
+  const notificationRoleContext = resolveNotificationRoleContext(currentRole);
   const profileHref = `/admin/user/${resolveProfileRoleSlug(currentRole)}`;
   const profileContainerClass = isTechnicianProfile
     ? 'flex min-h-11 items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-blue-900 shadow-sm transition hover:border-blue-400 hover:bg-blue-100'
@@ -189,6 +224,12 @@ export function AppShell({
   const avatarClass = isTechnicianProfile
     ? 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-900 text-xs font-semibold text-white'
     : 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white';
+
+  useEffect(() => {
+    window.setTimeout(() => {
+      void registerNotificationsServiceWorker();
+    }, 0);
+  }, []);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-slate-50">
@@ -208,7 +249,7 @@ export function AppShell({
       </div>
 
       {isMobileOpen ? (
-        <div className="fixed inset-0 z-50 md:hidden print:hidden">
+        <div className="fixed inset-0 z-[60] md:hidden print:hidden">
           <button
             aria-label="Cerrar navegación"
             className="absolute inset-0 bg-black/50"
@@ -231,7 +272,11 @@ export function AppShell({
           isSidebarCollapsed ? 'md:pl-16' : 'md:pl-64'
         }`}
       >
-        <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-md print:hidden">
+        <header
+          className={`fixed left-0 right-0 top-0 z-50 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-md transition-[left] duration-300 print:hidden ${
+            isSidebarCollapsed ? 'md:left-16' : 'md:left-64'
+          }`}
+        >
           <div className="flex min-w-0 items-center gap-3">
             <button
               aria-label="Abrir navegación"
@@ -253,14 +298,10 @@ export function AppShell({
               <p className="truncate text-sm font-semibold text-slate-950">{currentRole}</p>
             </div>
 
-            <button
-              aria-label="Alertas pendientes"
-              className="relative inline-flex h-11 w-11 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm"
-              type="button"
-            >
-              <Bell aria-hidden="true" size={19} />
-              <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-600" />
-            </button>
+            <NotificationsBell
+              activeRoleContext={notificationRoleContext}
+              items={currentNotifications}
+            />
 
             <div className={`${profileContainerClass} shrink-0`}>
               <div className={avatarClass}>
@@ -299,7 +340,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-hidden pt-20 print:pt-0">{children}</main>
       </div>
     </div>
   );
