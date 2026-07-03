@@ -81,9 +81,9 @@ type ClientSignatureMetadata = {
 };
 
 type MantenimientoRegistroFirma = {
+  notes?: string | null;
   uuid: string;
   status: MaintenanceRecordStatus | string | null;
-  notes?: string | null;
 };
 
 type DirectedRejectionResult = {
@@ -511,6 +511,59 @@ function buildSignaturePatch(
   };
 }
 
+function appendGxpWorkflowCommentToNotes({
+  existingNotes,
+  signingRole,
+  action,
+  validationComments,
+  rejectionComments,
+  signerEmail,
+  signedAtUtc,
+}: {
+  existingNotes: string | null | undefined;
+  signingRole: MaintenanceSigningRole;
+  action: MaintenanceSigningAction;
+  validationComments: string;
+  rejectionComments: string;
+  signerEmail: string;
+  signedAtUtc: string;
+}) {
+  const fallbackNotes = { raw_notes: existingNotes };
+  let parsedNotes: Record<string, unknown> = {};
+
+  if (existingNotes) {
+    try {
+      const parsed = JSON.parse(existingNotes) as unknown;
+      parsedNotes = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : fallbackNotes;
+    } catch {
+      parsedNotes = fallbackNotes;
+    }
+  }
+
+  const previousWorkflowComments =
+    parsedNotes.gxp_workflow_comments &&
+    typeof parsedNotes.gxp_workflow_comments === 'object' &&
+    !Array.isArray(parsedNotes.gxp_workflow_comments)
+      ? (parsedNotes.gxp_workflow_comments as Record<string, unknown>)
+      : {};
+  const effectiveComment = action === 'reject' ? rejectionComments : validationComments;
+
+  return JSON.stringify({
+    ...parsedNotes,
+    gxp_workflow_comments: {
+      ...previousWorkflowComments,
+      [signingRole]: {
+        action,
+        comment: effectiveComment,
+        signer_email: signerEmail,
+        signed_at_utc: signedAtUtc,
+      },
+    },
+  });
+}
+
 async function insertSignatureAuditEvent({
   supabase,
   recordUuid,
@@ -770,7 +823,7 @@ export async function signMaintenanceRecordAction(
 
   const { data: record, error: recordError } = await supabase
     .from('mantenimientos_registros')
-    .select('uuid, status')
+    .select('uuid, status, notes')
     .eq('uuid', recordUuid)
     .maybeSingle();
 
@@ -836,6 +889,18 @@ export async function signMaintenanceRecordAction(
     signedAtUtc,
     rejectionComments,
   );
+  const updatePayloadWithNotes = {
+    ...updatePayload,
+    notes: appendGxpWorkflowCommentToNotes({
+      existingNotes: maintenanceRecord.notes,
+      signingRole,
+      action,
+      validationComments,
+      rejectionComments,
+      signerEmail,
+      signedAtUtc,
+    }),
+  };
 
   const auditResult = await insertSignatureAuditEvent({
     supabase,
@@ -878,7 +943,7 @@ export async function signMaintenanceRecordAction(
 
   const { data: updatedRecord, error: updateError } = await supabase
     .from('mantenimientos_registros')
-    .update(updatePayload)
+    .update(updatePayloadWithNotes)
     .eq('uuid', recordUuid)
     .eq('status', maintenanceRecord.status)
     .select('uuid, status')
@@ -891,7 +956,7 @@ export async function signMaintenanceRecordAction(
       signerEmail,
       signingRole,
       signingAction: action,
-      attemptedStatus: updatePayload.status,
+      attemptedStatus: updatePayloadWithNotes.status,
     });
 
     console.error('[ALERTA AUDITORIA GxP] Error al estampar firma electronica', {

@@ -399,6 +399,34 @@ function buildTimelineEntries(rows: ParsedAuditRow[]): TimelineEntry[] {
   });
 }
 
+function resolveLegalMeaning(entry: TimelineEntry) {
+  if (entry.isRejected) {
+    return 'Evento de rechazo documentado como desviacion controlada. Requiere trazabilidad completa, revision humana y cierre de acciones antes de liberacion documental.';
+  }
+
+  if (entry.roleLabel === 'TÃ©cnico' || entry.roleLabel === 'Técnico') {
+    return 'Ejecucion tecnica atribuible: el operador declara la captura inicial del registro y sus evidencias asociadas bajo principios ALCOA+.';
+  }
+
+  if (entry.roleLabel === 'Supervisor') {
+    return 'Revision tecnica independiente: el supervisor confirma consistencia operativa, completitud del RUI y continuidad del flujo de validacion.';
+  }
+
+  if (entry.roleLabel === 'Calidad') {
+    return 'Dictamen QA: Aseguramiento de Calidad verifica cumplimiento regulatorio y aptitud documental para liberacion GxP.';
+  }
+
+  if (entry.roleLabel === 'Gerencia') {
+    return 'Sello institucional: Gerencia formaliza la aceptacion ejecutiva del registro cerrado como evidencia controlada.';
+  }
+
+  return 'Evento GxP registrado en la bitacora oficial con atribucion, timestamp y trazabilidad documental.';
+}
+
+function normalizeObservationComment(comment: string | null | undefined) {
+  return String(comment ?? '').trim();
+}
+
 function LoadingSkeleton() {
   return (
     <div className="grid gap-4 p-5" aria-label="Cargando bitácora de auditoría">
@@ -505,7 +533,7 @@ export function AuditLifecycleSheet({
             parsedComments.rejection_comments ??
             parsedComments.validation_comments ??
             parsedComments.rawText ??
-            'Sin comentarios registrados';
+            '';
 
           return {
             ...row,
@@ -779,15 +807,28 @@ export function AuditLifecycleSheet({
                             <time className="font-mono text-xs font-bold text-slate-600">{entry.timestamp}</time>
                           </div>
 
-                          <div
-                            className={`mt-4 rounded-lg border p-3 ${
-                              entry.isRejected ? 'border-red-200 bg-[#FEF2F2] text-red-700' : 'border-slate-200 bg-white text-slate-700'
-                            }`}
-                          >
+                          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-100 p-3 text-slate-700">
                             <p className="text-[11px] font-black uppercase tracking-wide">
-                              Comentarios de Validación GxP
+                              GXP LEGAL MEANING
                             </p>
-                            <p className="mt-1 text-sm font-semibold leading-6">{entry.comment}</p>
+                            <p className="mt-1 text-sm font-semibold leading-6">
+                              {resolveLegalMeaning(entry)}
+                            </p>
+                          </div>
+
+                          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-slate-700">
+                            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                              COMENTARIO GXP / OBSERVACIONES
+                            </p>
+                            {normalizeObservationComment(entry.comment) ? (
+                              <p className="mt-1 text-sm font-semibold leading-6">
+                                {normalizeObservationComment(entry.comment)}
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-sm italic leading-6 text-slate-400">
+                                Sin observaciones documentadas.
+                              </p>
+                            )}
                           </div>
 
                           <p className="mt-3 text-xs font-semibold text-slate-500">

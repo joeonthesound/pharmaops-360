@@ -134,7 +134,37 @@ type RecordNotes = {
   asset_uuid_origen?: string;
   template_code?: string;
   captured_at?: string;
+  gxp_workflow_comments?: Partial<
+    Record<
+      'supervisor' | 'quality' | 'management',
+      {
+        action?: string;
+        comment?: string | null;
+        signed_at_utc?: string;
+        signer_email?: string;
+      }
+    >
+  >;
   technical_observations?: string | null;
+};
+
+type SignatureAuditCommentRow = {
+  accion: string | null;
+  comentarios: string | null;
+  timestamp: string | null;
+  usuario: string | null;
+};
+
+type ParsedSignatureComments = {
+  rejection_comments?: string | null;
+  validation_comments?: string | null;
+  rawText?: string;
+};
+
+type MaintenanceRecordCommentAliases = MantenimientoRegistroResumen & {
+  comentario_aprobacion?: string | null;
+  supervisor_comentarios?: string | null;
+  tecnico_comentario?: string | null;
 };
 
 const UUID_V4_PATTERN =
@@ -521,6 +551,72 @@ function parseRecordNotes(notes: string | null): RecordNotes {
   } catch {
     return {};
   }
+}
+
+function parseSignatureComments(comentarios: string | null): ParsedSignatureComments {
+  if (!comentarios) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(comentarios) as unknown;
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as ParsedSignatureComments;
+    }
+
+    return {
+      rawText: comentarios,
+    };
+  } catch {
+    return {
+      rawText: comentarios,
+    };
+  }
+}
+
+function getAuditCommentText(row: SignatureAuditCommentRow | undefined) {
+  if (!row) {
+    return '';
+  }
+
+  const parsedComments = parseSignatureComments(row.comentarios);
+
+  return normalizeUtf8String(
+    parsedComments.rejection_comments ??
+      parsedComments.validation_comments ??
+      parsedComments.rawText ??
+      '',
+  );
+}
+
+function resolveSignatureAuditComment(
+  rows: SignatureAuditCommentRow[],
+  role: 'technician' | 'supervisor' | 'quality' | 'management',
+) {
+  if (role === 'technician') {
+    const creationRow = rows.find((row) => {
+      const action = String(row.accion ?? '').toUpperCase();
+      return action.includes('CREATION') || action.includes('SUBMISSION');
+    });
+
+    return getAuditCommentText(creationRow);
+  }
+
+  const approvalRows = rows.filter((row) => {
+    const action = String(row.accion ?? '').toUpperCase();
+    return action.includes('APPROVE') || action.includes('SIGN') || action.includes('MANAGEMENT');
+  });
+
+  if (role === 'supervisor') {
+    return getAuditCommentText(approvalRows[0]);
+  }
+
+  if (role === 'quality') {
+    return getAuditCommentText(approvalRows[1]);
+  }
+
+  return getAuditCommentText(approvalRows[2]);
 }
 
 function formatDateTimeUtc(value: string | null | undefined) {
@@ -1512,6 +1608,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
     { data: camposData, error: camposLookupError },
     { data: respuestasData },
     { data: usuarioData },
+    { data: auditTrailRowsData },
   ] = await Promise.all([
     supabase
       .from('formularios_campos')
@@ -1533,14 +1630,43 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
           .eq('active', true)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    maintenanceRecord?.uuid
+      ? supabase
+          .from('audit_trail')
+          .select('accion, comentarios, timestamp, usuario')
+          .eq('entity_uuid', maintenanceRecord.uuid)
+          .order('timestamp', { ascending: true })
+      : Promise.resolve({ data: [] }),
   ]);
 
   const campos = (camposData ?? []) as FormularioCampo[];
   const respuestas = (respuestasData ?? []) as FormularioRespuestaLectura[];
   const usuario = usuarioData as UsuarioPermisos | null;
+  const auditTrailRows = (auditTrailRowsData ?? []) as SignatureAuditCommentRow[];
+  const record = maintenanceRecord as MaintenanceRecordCommentAliases | null;
   const orderedResponses = buildOrderedResponses(respuestas, campos);
   const responsesBySection = groupAuditResponsesBySection(orderedResponses);
   const notes = parseRecordNotes(maintenanceRecord?.notes ?? null);
+  const technicianGxpComment =
+    notes.technical_observations ||
+    resolveSignatureAuditComment(auditTrailRows, 'technician') ||
+    maintenanceRecord?.rejection_comments ||
+    '';
+  const supervisorGxpComment =
+    notes.gxp_workflow_comments?.supervisor?.comment ||
+    resolveSignatureAuditComment(auditTrailRows, 'supervisor') ||
+    maintenanceRecord?.rejection_comments ||
+    '';
+  const qualityGxpComment =
+    notes.gxp_workflow_comments?.quality?.comment ||
+    resolveSignatureAuditComment(auditTrailRows, 'quality') ||
+    maintenanceRecord?.rejection_comments ||
+    '';
+  const managementGxpComment =
+    notes.gxp_workflow_comments?.management?.comment ||
+    resolveSignatureAuditComment(auditTrailRows, 'management') ||
+    maintenanceRecord?.rejection_comments ||
+    '';
   const statusBanner = resolveStatusBanner(normalizedStatus);
   const isManualFormMode = isManualFormLifecycleStatus(normalizedStatus);
   const isReadOnlyDocument = !isManualFormMode;
@@ -1625,24 +1751,51 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         user: maintenanceRecord?.assigned_technician ?? 'No disponible',
         timestamp: formatDateTimeUtc(maintenanceRecord?.executed_at ?? notes.captured_at),
         meaning: 'Confeccion del registro tecnico bajo accion afirmativa del operador.',
+        comments: technicianGxpComment,
       },
       {
         title: 'Supervisor',
         user: maintenanceRecord?.supervisor_signed_by ?? 'Pendiente',
         timestamp: formatDateTimeUtc(maintenanceRecord?.supervisor_signed_at),
         meaning: 'Revision de cumplimiento operativo bajo FDA 21 CFR Part 11.',
+        comments: supervisorGxpComment,
       },
       {
         title: 'Calidad',
         user: maintenanceRecord?.quality_signed_by ?? 'Pendiente',
         timestamp: formatDateTimeUtc(maintenanceRecord?.quality_signed_at),
         meaning: 'Liberacion documental e inmutabilidad del registro aprobado.',
+        comments: qualityGxpComment,
       },
       {
         title: 'Gerencia',
         user: maintenanceRecord?.management_signed_by ?? 'Pendiente',
         timestamp: formatDateTimeUtc(maintenanceRecord?.management_signed_at),
         meaning: 'Aprobacion final y cierre administrativo del RUI.',
+        comments: managementGxpComment,
+      },
+    ];
+    const reviewSignatureCards = [
+      {
+        canSign: supervisorCanSign,
+        signature: signatureCards[1],
+        signedAt: maintenanceRecord?.supervisor_signed_at ?? null,
+        signedBy: maintenanceRecord?.supervisor_signed_by ?? null,
+        signingRole: 'supervisor' as const,
+      },
+      {
+        canSign: qualityCanSign,
+        signature: signatureCards[2],
+        signedAt: maintenanceRecord?.quality_signed_at ?? null,
+        signedBy: maintenanceRecord?.quality_signed_by ?? null,
+        signingRole: 'quality' as const,
+      },
+      {
+        canSign: managementCanSign,
+        signature: signatureCards[3],
+        signedAt: maintenanceRecord?.management_signed_at ?? null,
+        signedBy: maintenanceRecord?.management_signed_by ?? null,
+        signingRole: 'management' as const,
       },
     ];
 
@@ -1812,9 +1965,10 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                 </p>
                 <p>
                   <span className="font-bold">Audit Trail Comments / Observations: </span>
-                  {signature.title === 'Tecnico'
-                    ? notes.technical_observations || 'Sin observaciones registradas'
-                    : maintenanceRecord?.rejection_comments || 'Sin comentarios adicionales registrados'}
+                  {signature.comments ||
+                    record?.tecnico_comentario ||
+                    record?.comentario_aprobacion ||
+                    'Confeccion del registro tecnico bajo accion afirmativa del operador.'}
                 </p>
               </article>
             ))}
@@ -2058,44 +2212,37 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                     Confeccion del registro tecnico bajo accion afirmativa del operador.
                   </p>
                 </div>
+                {/* RECONCILIACION DE COMENTARIO GXP */}
+                <div className="mt-3 block border-t border-slate-100 pt-2">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Comentario de Validacion GxP:
+                  </span>
+                  <p className="mt-1 whitespace-pre-wrap rounded border border-slate-200/60 bg-slate-50 p-2 text-xs italic text-slate-700">
+                    {signatureCards[0]?.comments ||
+                      record?.tecnico_comentario ||
+                      record?.comentario_aprobacion ||
+                      'Confeccion del registro tecnico bajo accion afirmativa del operador.'}
+                  </p>
+                </div>
               </div>
             </article>
 
-            <SignatureReviewCard
-              canSign={supervisorCanSign}
-              currentUserRole={usuario?.role ?? 'Sin rol activo'}
-              rejectionComments={maintenanceRecord?.rejection_comments ?? null}
-              recordUuid={maintenanceRecord?.uuid ?? ''}
-              reviewerTitle="Supervisor"
-              signedAt={maintenanceRecord?.supervisor_signed_at ?? null}
-              signedBy={maintenanceRecord?.supervisor_signed_by ?? null}
-              signingRole="supervisor"
-              status={normalizedStatus}
-            />
-
-            <SignatureReviewCard
-              canSign={qualityCanSign}
-              currentUserRole={usuario?.role ?? 'Sin rol activo'}
-              rejectionComments={maintenanceRecord?.rejection_comments ?? null}
-              recordUuid={maintenanceRecord?.uuid ?? ''}
-              reviewerTitle="Calidad"
-              signedAt={maintenanceRecord?.quality_signed_at ?? null}
-              signedBy={maintenanceRecord?.quality_signed_by ?? null}
-              signingRole="quality"
-              status={normalizedStatus}
-            />
-
-            <SignatureReviewCard
-              canSign={managementCanSign}
-              currentUserRole={usuario?.role ?? 'Sin rol activo'}
-              rejectionComments={maintenanceRecord?.rejection_comments ?? null}
-              recordUuid={maintenanceRecord?.uuid ?? ''}
-              reviewerTitle="Aprobacion y Cierre de Gerencia"
-              signedAt={maintenanceRecord?.management_signed_at ?? null}
-              signedBy={maintenanceRecord?.management_signed_by ?? null}
-              signingRole="management"
-              status={normalizedStatus}
-            />
+            {reviewSignatureCards.map(({ canSign, signature, signedAt, signedBy, signingRole }) => (
+              <SignatureReviewCard
+                canSign={canSign}
+                currentUserRole={usuario?.role ?? 'Sin rol activo'}
+                gxpComment={signature.comments}
+                legalMeaning={signature.meaning}
+                key={signature.title}
+                rejectionComments={maintenanceRecord?.rejection_comments ?? null}
+                recordUuid={maintenanceRecord?.uuid ?? ''}
+                reviewerTitle={signature.title}
+                signedAt={signedAt}
+                signedBy={signedBy}
+                signingRole={signingRole}
+                status={normalizedStatus}
+              />
+            ))}
           </aside>
         </section>
       </main>

@@ -24,6 +24,8 @@ type MaintenanceStatus =
 type SignatureReviewCardProps = {
   canSign: boolean;
   currentUserRole: string;
+  gxpComment?: string | null;
+  legalMeaning?: string;
   recordUuid: string;
   rejectionComments: string | null;
   reviewerTitle: string;
@@ -106,9 +108,23 @@ function resolveApproveLabel(signingRole: MaintenanceSigningRole) {
   return signingRole === 'management' ? 'Aprobar Cierre' : 'Aprobar Inspeccion';
 }
 
+function resolveDefaultLegalMeaning(signingRole: MaintenanceSigningRole) {
+  if (signingRole === 'supervisor') {
+    return 'Revision de cumplimiento operativo bajo FDA 21 CFR Part 11.';
+  }
+
+  if (signingRole === 'quality') {
+    return 'Liberacion documental e inmutabilidad del registro aprobado.';
+  }
+
+  return 'Aprobacion final y cierre administrativo del RUI.';
+}
+
 export function SignatureReviewCard({
   canSign,
   currentUserRole,
+  gxpComment,
+  legalMeaning,
   recordUuid,
   rejectionComments,
   reviewerTitle,
@@ -137,6 +153,8 @@ export function SignatureReviewCard({
     signingRole === 'management' && (Boolean(signedAt) || isTerminalStatus);
   const isGerenciaButtonDisabled = isAlreadySignedByManagement || isPending;
   const canRenderActions = activeStep && canSign && !isAlreadySignedByManagement && !isTerminalStatus;
+  const resolvedLegalMeaning = legalMeaning ?? resolveDefaultLegalMeaning(signingRole);
+  const resolvedGxpComment = gxpComment?.trim() || 'Sin observaciones documentadas.';
 
   function openSignatureModal(action: MaintenanceSigningAction) {
     if (isAlreadySignedByManagement || isTerminalStatus) {
@@ -254,6 +272,23 @@ export function SignatureReviewCard({
         <div>
           <span className="font-semibold text-slate-900">Fecha UTC: </span>
           {formatDateTimeUtc(signedAt)}
+        </div>
+        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+            GxP Legal Meaning
+          </p>
+          <p className="mt-1 text-xs font-semibold leading-5 text-slate-700">
+            {resolvedLegalMeaning}
+          </p>
+        </div>
+        {/* RECONCILIACION DE COMENTARIO GXP */}
+        <div className="mt-1 block border-t border-slate-100 pt-2">
+          <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Comentario de Validacion GxP:
+          </span>
+          <p className="mt-1 whitespace-pre-wrap rounded border border-slate-200/60 bg-slate-50 p-2 text-xs italic text-slate-700">
+            {resolvedGxpComment}
+          </p>
         </div>
       </div>
 
