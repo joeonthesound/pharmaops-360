@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AppShell } from '@/modules/common/components';
+import { NavigationProgress } from '@/modules/common/components/navigation-progress';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 
 type AppLayoutProps = {
@@ -160,6 +161,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
       currentUserEmail={currentUser.email}
       currentUserName={currentUser.fullName}
     >
+      <NavigationProgress />
       {children}
     </AppShell>
   );

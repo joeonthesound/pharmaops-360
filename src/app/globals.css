@@ -1,3 +1,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@keyframes pharmaops-route-progress {
+  0% {
+    transform: translateX(-100%) scaleX(0.35);
+  }
+
+  45% {
+    transform: translateX(-20%) scaleX(0.8);
+  }
+
+  100% {
+    transform: translateX(100%) scaleX(0.35);
+  }
+}
+
+.pharmaops-route-progress {
+  animation: pharmaops-route-progress 1.15s ease-in-out infinite;
+  transform-origin: left center;
+  width: 100%;
+}
