@@ -19,6 +19,7 @@ export type PharmaOpsRole =
   | 'Producción'
   | 'Administrativo'
   | 'Administrador'
+  | 'Auditor'
   | 'Supervisor'
   | 'Temporal'
   | 'Propietario / Gerencia';

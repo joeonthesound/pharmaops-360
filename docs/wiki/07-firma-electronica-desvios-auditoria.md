@@ -22,6 +22,7 @@ Roles de firma:
 
 - `supervisor`
 - `quality`
+- `management`
 
 Acciones:
 
@@ -32,6 +33,7 @@ Requisitos:
 
 - Comentario GxP minimo 10 caracteres para aprobacion.
 - Rechazo simple historico requiere comentarios.
+- El comentario de aprobacion se conserva en `notes.gxp_workflow_comments[rol]`.
 - Captura metadata:
   - `deviceTimestamp`
   - `clientIp`
@@ -75,6 +77,13 @@ Tablas usadas:
 - `audit_trail`
 - `auditoria_log_cambios`
 
+Eventos principales:
+
+- `SIGN_APPROVE`: firma electronica afirmativa.
+- `SIGN_REJECT`: rechazo de etapa.
+- `RECHAZAR_CON_DESVIO`: rechazo dirigido con retorno controlado.
+- `PRINT_CONTROLLED_COPY`: apertura de vista de impresion controlada.
+
 Para rechazo dirigido se registra en `auditoria_log_cambios`:
 
 - `usuario_email`
@@ -96,6 +105,33 @@ Para rechazo dirigido se registra en `auditoria_log_cambios`:
 - `deviation_description`
 - `environment_metadata`
 
+## Comentarios y Observaciones
+
+Cada firma debe mostrar un bloque "Comentario de Validacion GxP" debajo de "GXP LEGAL MEANING".
+
+Orden de reconciliacion en UI:
+
+1. `notes.gxp_workflow_comments.<rol>.comment`
+2. Comentarios o justificacion presentes en nodos de `audit_trail` o `mantenimiento_firmas`
+3. `rejection_comments`
+4. Fallback: `Sin observaciones documentadas.`
+
+Esto permite que filas heredadas sigan siendo legibles aunque no tengan el nodo JSON nuevo.
+
+## Copias Controladas
+
+La accion de impresion regulada se audita antes de entregar la vista final al usuario.
+
+Metadata minima:
+
+- `print_index`
+- `target_rui`
+- `timestamp`
+- `operator_identity`
+- `role_attribution`
+
+Si el rol del solicitante es `auditor`, la vista impresa debe incluir marca de agua: `COPIA CONTROLADA - EXCLUSIVO PARA AUDITORIA`.
+
 ## Compensacion Transaccional
 
 Si falla el insert de auditoria despues de actualizar el registro:
@@ -116,3 +152,4 @@ Si falla el insert de auditoria despues de actualizar el registro:
 
 - [Mantenimiento, RUI y Ciclo de Vida](./05-mantenimiento-rui-ciclo-vida.md)
 - [Modelo de Datos Supabase](./10-modelo-datos-supabase.md)
+- [Portal Auditor y Copias Controladas](./14-portal-auditor-copias-controladas.md)

@@ -20,6 +20,9 @@ Campos usados:
 - `can_review`
 - `can_approve`
 - `can_manage_users`
+- `can_view_audit`
+- `can_access_forensic_sheet`
+- `can_export_controlled_copies`
 
 ## Principio Actual
 
@@ -52,12 +55,23 @@ Filtro: [`src/modules/common/components/navigation.utils.ts`](../../src/modules/
 - `requiredCapabilities`
 - `children`
 
+## Roles Normalizados
+
+| Nivel | Rol canonico | Uso principal |
+| --- | --- | --- |
+| Nivel 1 | `superadmin` / D10S | Pre-flight, debug maestro, branding e identidad supervisada. |
+| Nivel 2 | `supervisor` | Revision tecnica, programacion y respuesta primaria. |
+| Nivel 3 | `calidad` | Liberacion, dictamen GxP y CAPA. |
+| Nivel 4 | `gerencia` | Cierre institucional y analitica operativa. |
+| Nivel 5 | `tecnico` | Ejecucion movil, checklist y evidencias. |
+| Externo | `auditor` | Muestreo read-only, ficha forense y copias controladas. |
+
 ### `requiredCapabilities`
 
 Tipo:
 
 ```ts
-Array<'can_approve' | 'can_create_assets'>
+Array<'can_approve' | 'can_create_assets' | 'can_view_audit' | 'can_access_forensic_sheet' | 'can_export_controlled_copies'>
 ```
 
 Regla:
@@ -100,7 +114,24 @@ Si no cumple:
 
 La restriccion de ruta no depende solo del sidebar. Aunque el enlace no se renderice, la pagina aplica validacion server-side.
 
+## Segregacion de Funciones
+
+Reglas de interfaz aplicadas en administracion de usuarios:
+
+- Si `role = auditor`, `job_title = Auditor Externo` o `area = Entidad Regulatoria Externa`, el sistema fuerza `can_view_audit`, `can_access_forensic_sheet` y `can_export_controlled_copies`.
+- Para el mismo perfil auditor, quedan bloqueadas las capacidades de mutacion: `can_create_assets`, `can_execute_maintenance` y `can_manage_users`.
+- Si `job_title = Tecnico de Campo`, el sistema fuerza `can_execute_maintenance` y bloquea `can_review`, `can_approve` y `can_manage_users`.
+- Cualquier intento visual de tocar un permiso bloqueado muestra la advertencia de incompatibilidad GxP por Segregacion de Funciones.
+
+## Rutas Sensibles Nuevas
+
+- `/admin/superadmin`: requiere control Nivel 1 D10S y no debe usarse para mutaciones silenciosas de identidad.
+- `/auditoria`: requiere rol `auditor`; muestra expedientes cerrados y acciones read-only.
+- `/mantenimiento/imprimir/[id]`: renderiza copia controlada print-ready, incrementa contador y escribe auditoria.
+
 ## Enlaces Relacionados
 
 - [Crear Ordenes y Plantillas Dinamicas](./06-crear-ordenes-plantillas.md)
 - [Modelo de Datos Supabase](./10-modelo-datos-supabase.md)
+- [Usuarios y Roles](./09-usuarios-roles.md)
+- [Portal Auditor y Copias Controladas](./14-portal-auditor-copias-controladas.md)

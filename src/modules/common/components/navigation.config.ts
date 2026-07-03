@@ -27,6 +27,11 @@ export const ROLE_SIDEBAR_THEME: Record<PharmaOpsRole, SidebarTheme> = {
   },
   Administrativo: slateTheme,
   Administrador: slateTheme,
+  Auditor: {
+    ...slateTheme,
+    mutedText: 'text-emerald-200',
+    itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
+  },
   Supervisor: {
     ...slateTheme,
     mutedText: 'text-slate-300',
@@ -49,6 +54,8 @@ export const ALL_NAVIGATION_ROLES = [
   'Administrador',
   'Propietario / Gerencia',
   'Gerente General',
+  'Auditor',
+  'auditor',
   'Calidad',
   'Supervisor',
   'TÃ©cnico',
@@ -58,6 +65,12 @@ export const ALL_NAVIGATION_ROLES = [
 ];
 
 export const NAVIGATION_TREE: NavigationNode[] = [
+  {
+    title: 'Auditoría',
+    href: '/auditoria',
+    icon: 'ShieldCheck',
+    rolesAllowed: ['Auditor', 'auditor'],
+  },
   {
     title: 'Activos',
     href: '/activos',

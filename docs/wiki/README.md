@@ -17,6 +17,17 @@ Este directorio documenta de forma modular el estado funcional, tecnico y GxP de
 - [10 - Modelo de Datos Supabase](./10-modelo-datos-supabase.md)
 - [11 - Runbooks de Validacion](./11-runbooks-validacion.md)
 - [12 - Supabase: Definicion y Replicacion de Base de Datos](./12-supabase-replicacion-db.md)
+- [13 - SuperAdmin D10S y Cabina de Control](./13-superadmin-d10s-cabina-control.md)
+- [14 - Portal Auditor y Copias Controladas](./14-portal-auditor-copias-controladas.md)
+
+## Guia Rapida por Perfil
+
+- SuperAdmin D10S: usar `/admin/superadmin` para pre-flight checks, herramientas retenidas de base de datos, branding corporativo y supervision de identidad.
+- Supervisor Tecnico: usar mantenimiento/RUI para revisar registros tecnicos, responder desviaciones y firmar revision de supervisor.
+- Aseguramiento de Calidad: liberar o rechazar registros con comentario GxP obligatorio y trazabilidad en auditoria.
+- Gerencia de Operaciones: revisar cierres institucionales, indicadores operativos y estados finales cuando aplique.
+- Tecnico de Mantenimiento: ejecutar registros RUI desde vista movil, completar checklist, capturar evidencias y enviar a revision.
+- Auditor Externo: usar `/auditoria` para muestreo de expedientes cerrados, ficha forense y copias controladas de solo lectura.
 
 ## Convenciones
 
@@ -24,6 +35,7 @@ Este directorio documenta de forma modular el estado funcional, tecnico y GxP de
 - Las mutaciones server-side se documentan como Server Actions.
 - Los nombres de tablas se documentan con esquema logico `public.<tabla>`.
 - Los estados GxP se documentan con el valor exacto esperado en base de datos cuando aplica.
+- Las copias impresas reguladas se documentan como vistas HTML print-ready, no como archivos PDF generados desde estado cliente.
 
 ## Estado de Compilacion
 

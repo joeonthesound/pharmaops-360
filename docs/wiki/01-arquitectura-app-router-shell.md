@@ -25,6 +25,8 @@ Responsabilidades:
 - Calcula capacidades agregadas:
   - `canApprove`
   - `canCreateAssets`
+- Reconoce `auditor` como rol externo de solo lectura.
+- Redirige perfiles auditor hacia el espacio `/auditoria` cuando corresponde.
 - Pasa datos a `AppShell`:
   - `currentRole`
   - `currentUserName`
@@ -38,6 +40,7 @@ Archivo: [`src/modules/common/components/app-shell.tsx`](../../src/modules/commo
 Responsabilidades:
 
 - Renderizar layout visual con sidebar fijo.
+- Mantener estructura estable con sidebar no colapsable en ancho base y contenido `min-w-0`.
 - Renderizar header superior.
 - Mostrar breadcrumbs dinamicos.
 - Mostrar widget de usuario.
@@ -66,6 +69,18 @@ Responsabilidades:
 - Manejar menus colapsables.
 - Aplicar clase activa.
 - Filtrar por busqueda local.
+- Mantener `shrink-0` y anchos explicitos para evitar que las vistas auditor o tablas anchas invadan el espacio del menu.
+- El filtrado por rol elimina padres vacios para que no queden contenedores flex sin hijos visibles.
+
+## Estabilidad Visual
+
+El layout autenticado debe conservar esta regla:
+
+```txt
+sidebar fijo/minimo + main flex-1 min-w-0 overflow-x-hidden
+```
+
+Esto evita desplazamientos laterales cuando el rol `auditor` oculta acciones de mutacion como crear, editar, eliminar o reasignar.
 
 ## Riesgos
 
@@ -77,3 +92,4 @@ Responsabilidades:
 
 - [IAM, Roles, Capacidades y Navegacion](./02-iam-navegacion-capacidades.md)
 - [Usuarios y Roles](./09-usuarios-roles.md)
+- [Portal Auditor y Copias Controladas](./14-portal-auditor-copias-controladas.md)

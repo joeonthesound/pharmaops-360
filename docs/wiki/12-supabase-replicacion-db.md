@@ -73,6 +73,8 @@ La aplicacion no depende solo de `role`. Para zonas criticas usa flags booleanos
 - `can_review`
 - `can_approve`
 - `can_view_audit`
+- `can_access_forensic_sheet`
+- `can_export_controlled_copies`
 - `can_manage_users`
 
 La ruta `Crear Ordenes` permite acceso si el usuario activo tiene:
@@ -111,6 +113,8 @@ create table if not exists public.usuarios_roles (
   can_review boolean not null default false,
   can_approve boolean not null default false,
   can_view_audit boolean not null default false,
+  can_access_forensic_sheet boolean not null default false,
+  can_export_controlled_copies boolean not null default false,
   can_manage_users boolean not null default false,
   requires_2fa boolean not null default false,
   notes text,
@@ -123,6 +127,12 @@ create index if not exists idx_usuarios_roles_email
 
 create index if not exists idx_usuarios_roles_active
   on public.usuarios_roles (active);
+
+alter table public.usuarios_roles
+  add column if not exists can_access_forensic_sheet boolean not null default false;
+
+alter table public.usuarios_roles
+  add column if not exists can_export_controlled_copies boolean not null default false;
 
 -- =========================================================
 -- 2. Activos regulados
@@ -606,6 +616,9 @@ order by asset_code;
 - `activos_historial_cambios` queda sin politicas `update` o `delete`; con RLS activo, esas operaciones quedan bloqueadas salvo service role.
 - `auditoria_log_cambios`, `audit_trail` y `mantenimiento_firmas` deben tratarse como registros historicos.
 - Para produccion regulada, las politicas amplias de escritura deben reemplazarse por funciones de autorizacion basadas en `usuarios_roles`.
+- El rol `auditor` debe conservarse como perfil read-only: lectura de expedientes, ficha forense y copia controlada.
+- Los comentarios de aprobacion se guardan en `mantenimientos_registros.notes.gxp_workflow_comments` para evitar migraciones de columnas inmediatas.
+- Las impresiones controladas incrementan `mantenimientos_registros.notes.print_metadata.count` y generan evento `PRINT_CONTROLLED_COPY`.
 
 ## Enlaces Relacionados
 
@@ -614,3 +627,4 @@ order by asset_code;
 - [Crear Ordenes y Plantillas Dinamicas](./06-crear-ordenes-plantillas.md)
 - [Firma Electronica, Desvios y Auditoria](./07-firma-electronica-desvios-auditoria.md)
 - [Evidencias Fotograficas y Storage](./08-evidencias-storage.md)
+- [Portal Auditor y Copias Controladas](./14-portal-auditor-copias-controladas.md)

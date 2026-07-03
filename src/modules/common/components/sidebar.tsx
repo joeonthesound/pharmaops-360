@@ -308,7 +308,11 @@ export function Sidebar({
   }
 
   return (
-    <aside className={`flex min-h-screen w-full flex-col border-r ${theme.border} ${theme.shell}`}>
+    <aside
+      className={`flex min-h-screen w-full shrink-0 flex-col overflow-x-hidden border-r ${
+        isCollapsed ? 'min-w-16' : 'min-w-[16rem]'
+      } ${theme.border} ${theme.shell}`}
+    >
       <div className={`border-b border-white/10 ${isCollapsed ? 'p-3' : 'p-4'}`}>
         <p className={`text-xs font-semibold uppercase tracking-wide ${theme.mutedText} ${isCollapsed ? 'hidden' : ''}`}>
           PharmaOps 360

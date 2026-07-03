@@ -32,6 +32,7 @@ type AuthUserRow = {
   id: number;
   user_email: string | null;
   active: boolean | null;
+  role: string | null;
 };
 
 const initialLoginState: LoginState = {
@@ -44,6 +45,14 @@ function normalizeEmailForLookup(value: string | null | undefined) {
     .trim()
     .replace(/\s+/g, '')
     .toLowerCase();
+}
+
+function normalizeRoleForRedirect(value: string | null | undefined) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 function getSupabaseProjectRef(supabaseUrl: string | undefined) {
@@ -129,6 +138,7 @@ async function loginAction(
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const email = normalizeEmailForLookup(String(formData.get('email') ?? ''));
   const password = String(formData.get('password') ?? '');
+  let postLoginRedirectTo = '/dashboard';
 
   console.log('[DIAGNOSTICO P360] ETAPA 1 [Variables de Entorno]', {
     NEXT_PUBLIC_SUPABASE_URL: {
@@ -174,14 +184,14 @@ async function loginAction(
       supabaseProjectRef: getSupabaseProjectRef(supabaseUrl),
       authMode: 'anon_key_before_signInWithPassword',
       table: 'usuarios_roles',
-      select: 'id, user_email, active',
+      select: 'id, user_email, active, role',
       filter: { user_email_ilike: `%${email}%` },
     });
 
     const { supabase } = await import('@/shared/lib/supabase');
     const { data, error } = await supabase
       .from('usuarios_roles')
-      .select('id, user_email, active')
+      .select('id, user_email, active, role')
       .ilike('user_email', `%${email}%`)
       .limit(10);
 
@@ -233,6 +243,9 @@ async function loginAction(
         message: 'Credenciales de autenticacion invalidas.',
       };
     }
+
+    postLoginRedirectTo =
+      normalizeRoleForRedirect(matchedUser.role) === 'auditor' ? '/auditoria' : '/dashboard';
   } catch (error) {
     console.log('[DIAGNOSTICO P360] ETAPA 4 [Resultado / Error]', {
       result: 'exception',
@@ -246,11 +259,11 @@ async function loginAction(
   }
 
   console.log('[DIAGNOSTICO P360] ETAPA 5 [Flujo de Redireccion]', {
-    redirectTo: '/dashboard',
+    redirectTo: postLoginRedirectTo,
     willRedirect: true,
   });
 
-  redirect('/dashboard');
+  redirect(postLoginRedirectTo);
 }
 
 function StatusBadge({

@@ -50,6 +50,10 @@ function getRoleAliases(role: string) {
     aliases.add('tecnico');
   }
 
+  if (normalizedRole.includes('auditor')) {
+    aliases.add('auditor');
+  }
+
   return aliases;
 }
 
@@ -107,6 +111,10 @@ export function filterNavigationByRole(
     const children = node.children
       ? filterNavigationByRole(node.children, role, capabilities)
       : undefined;
+
+    if (node.children?.length && !node.href && (!children || children.length === 0)) {
+      return [];
+    }
 
     return [{ ...node, children }];
   });

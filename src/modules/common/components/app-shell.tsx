@@ -164,10 +164,10 @@ export function AppShell({
     : 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white';
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen overflow-x-hidden bg-slate-50">
       <div
-        className={`hidden print:hidden md:fixed md:inset-y-0 md:left-0 md:block transition-[width] duration-300 ${
-          isSidebarCollapsed ? 'md:w-16' : 'md:w-64'
+        className={`hidden shrink-0 print:hidden md:fixed md:inset-y-0 md:left-0 md:block transition-[width] duration-300 ${
+          isSidebarCollapsed ? 'md:w-16 md:min-w-16' : 'md:w-64 md:min-w-[16rem]'
         }`}
       >
         <Sidebar
@@ -200,12 +200,12 @@ export function AppShell({
       ) : null}
 
       <div
-        className={`min-h-screen transition-[padding] duration-300 print:pl-0 ${
+        className={`min-h-screen min-w-0 overflow-x-hidden transition-[padding] duration-300 print:pl-0 ${
           isSidebarCollapsed ? 'md:pl-16' : 'md:pl-64'
         }`}
       >
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white px-4 py-3 print:hidden">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               aria-label="Abrir navegación"
               className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-900 shadow-sm md:hidden"
@@ -235,7 +235,7 @@ export function AppShell({
               <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-600" />
             </button>
 
-            <div className={profileContainerClass}>
+            <div className={`${profileContainerClass} shrink-0`}>
               <div className={avatarClass}>
                 {initials}
               </div>
@@ -254,7 +254,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="min-w-0">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-hidden">{children}</main>
       </div>
     </div>
   );

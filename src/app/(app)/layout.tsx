@@ -38,6 +38,7 @@ function normalizeRole(role: string | null | undefined) {
     producción: 'Producción',
     administrativo: 'Administrativo',
     administrador: 'Administrador',
+    auditor: 'Auditor',
     supervisor: 'Supervisor',
     temporal: 'Temporal',
     'propietario / gerencia': 'Propietario / Gerencia',

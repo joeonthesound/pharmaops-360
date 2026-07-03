@@ -50,6 +50,8 @@ Campos usados:
 - `supervisor_signed_at`
 - `quality_signed_by`
 - `quality_signed_at`
+- `management_signed_by`
+- `management_signed_at`
 - `rejection_comments`
 
 Estados relevantes:
@@ -113,6 +115,56 @@ Uso:
 - Perfil visible.
 - Capacidades.
 - Control IAM.
+
+Capacidades clave:
+
+- `can_create_assets`
+- `can_execute_maintenance`
+- `can_review`
+- `can_approve`
+- `can_view_audit`
+- `can_access_forensic_sheet`
+- `can_export_controlled_copies`
+- `can_manage_users`
+
+Roles canonicos:
+
+- `tecnico`
+- `supervisor`
+- `calidad`
+- `gerencia`
+- `auditor`
+
+### `mantenimientos_registros.notes`
+
+`notes` se trata como bloque JSON serializado para extensiones compatibles sin migrar columnas en cada iteracion.
+
+Nodos actuales:
+
+- `progress_step`: paso documental.
+- `gxp_workflow_comments`: comentarios de firma por rol.
+- `print_metadata`: contador y metadata de impresiones controladas.
+
+Ejemplo:
+
+```json
+{
+  "progress_step": 3,
+  "gxp_workflow_comments": {
+    "supervisor": {
+      "action": "approve",
+      "comment": "Revision tecnica conforme.",
+      "signer_email": "supervisor@planta.com",
+      "signed_at_utc": "2026-07-02T00:00:00.000Z"
+    }
+  },
+  "print_metadata": {
+    "count": 2,
+    "last_printed_at_utc": "2026-07-02T00:00:00.000Z",
+    "last_printed_by": "auditor@externo.com"
+  }
+}
+```
 
 ### `auditoria_log_cambios`
 
