@@ -56,10 +56,16 @@ type MantenimientoRegistro = {
   asset_code: string | null;
   status: MaintenanceStatus;
   created_at?: string | null;
+  assigned_technician?: string | null;
   executed_at: string | null;
   scheduled_date: string | null;
+  supervisor_signed_by?: string | null;
+  supervisor_signed_at?: string | null;
+  quality_signed_by?: string | null;
   quality_signed_at: string | null;
+  management_signed_by?: string | null;
   management_signed_at?: string | null;
+  notes?: string | null;
   rejection_comments?: string | null;
 };
 
@@ -76,62 +82,33 @@ const estadoClasses: Record<ActivoEstado, string> = {
   'Fuera de servicio': 'border-red-200 bg-red-50 text-red-800',
 };
 
-const orderStatusClasses: Record<MantenimientoRegistro['status'], string> = {
-  draft: 'border-slate-200 bg-slate-100 text-slate-700',
-  pending_technician: 'border-indigo-200 bg-indigo-50 text-indigo-800',
-  pending_supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
-  pending_quality: 'border-sky-200 bg-sky-50 text-sky-800',
-  pending_management: 'border-purple-200 bg-purple-50 text-purple-800',
-  rejected: 'border-red-200 bg-red-50 text-red-800',
-  approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Draft: 'border-slate-200 bg-slate-100 text-slate-700',
-  DRAFT: 'border-slate-200 bg-slate-100 text-slate-700',
-  PENDING_TECHNICIAN: 'border-indigo-200 bg-indigo-50 text-indigo-800',
-  PENDING_SUPERVISOR: 'border-amber-200 bg-amber-50 text-amber-800',
-  PENDING_QUALITY: 'border-sky-200 bg-sky-50 text-sky-800',
-  PENDING_MANAGEMENT: 'border-purple-200 bg-purple-50 text-purple-800',
-  RECHAZADO_TECNICO: 'border-red-200 bg-red-50 text-red-800',
-  APPROVED: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Pending_Supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
-  Pending_Quality: 'border-sky-200 bg-sky-50 text-sky-800',
-  Rejected: 'border-red-200 bg-red-50 text-red-800',
-  Approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Completed: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Borrador: 'border-slate-200 bg-slate-100 text-slate-700',
-  Pendiente_Supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
-  Pendiente_Calidad: 'border-sky-200 bg-sky-50 text-sky-800',
-  Rechazado: 'border-red-200 bg-red-50 text-red-800',
-  Aprobado: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Cerrado: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+type CanonicalMaintenanceStatus =
+  | 'draft'
+  | 'pending_technician'
+  | 'pending_supervisor'
+  | 'pending_quality'
+  | 'pending_management'
+  | 'rejected'
+  | 'approved';
+
+const orderStatusClasses: Record<CanonicalMaintenanceStatus, string> = {
+  draft: 'border-amber-200 bg-amber-50 text-amber-800 shadow-sm',
+  pending_technician: 'border-amber-200 bg-amber-50 text-amber-800 shadow-sm',
+  pending_supervisor: 'border-cyan-200 bg-indigo-50/70 text-slate-800 shadow-sm',
+  pending_quality: 'border-cyan-200 bg-indigo-50/70 text-slate-800 shadow-sm',
+  pending_management: 'border-cyan-200 bg-indigo-50/70 text-slate-800 shadow-sm',
+  rejected: 'border-red-200 bg-red-50 text-red-800 shadow-sm',
+  approved: 'border-emerald-800 bg-emerald-900 text-white shadow-sm',
 };
 
-const orderStatusLabel: Record<MantenimientoRegistro['status'], string> = {
+const orderStatusLabel: Record<CanonicalMaintenanceStatus, string> = {
   draft: 'Borrador',
   pending_technician: 'Pendiente Tecnico',
   pending_supervisor: 'Pendiente Supervisor',
   pending_quality: 'Pendiente Calidad',
   pending_management: 'Pendiente Gerencia',
-  rejected: 'Rechazado',
-  approved: 'Aprobado',
-  Draft: 'Borrador',
-  DRAFT: 'Borrador',
-  PENDING_TECHNICIAN: 'Pendiente Tecnico',
-  PENDING_SUPERVISOR: 'Pendiente Supervisor',
-  PENDING_QUALITY: 'Pendiente Calidad',
-  PENDING_MANAGEMENT: 'Pendiente Gerencia',
-  RECHAZADO_TECNICO: 'Rechazado Tecnico',
-  APPROVED: 'Aprobado',
-  Pending_Supervisor: 'Pendiente Supervisor',
-  Pending_Quality: 'Pendiente Calidad',
-  Rejected: 'Rechazado',
-  Approved: 'Aprobado',
-  Completed: 'Completado',
-  Borrador: 'Borrador',
-  Pendiente_Supervisor: 'Pendiente Supervisor',
-  Pendiente_Calidad: 'Pendiente Calidad',
-  Rechazado: 'Rechazado',
-  Aprobado: 'Aprobado',
-  Cerrado: 'Cerrado',
+  rejected: 'Rechazado Tecnico',
+  approved: 'REGISTRO CERRADO',
 };
 
 const tabs: Array<{ href: string; label: string; value: DashboardView }> = [
@@ -206,6 +183,67 @@ function normalizeView(value: string | undefined): DashboardView {
   }
 
   return 'pending';
+}
+
+function normalizeMaintenanceStatus(
+  status: MantenimientoRegistro['status'] | string | null | undefined,
+): CanonicalMaintenanceStatus {
+  const normalized = String(status ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\s-]+/g, '_');
+
+  if (
+    normalized === 'pending_technician' ||
+    normalized === 'pendiente_tecnico' ||
+    normalized === 'pending_tecnico'
+  ) {
+    return 'pending_technician';
+  }
+
+  if (normalized === 'pending_supervisor' || normalized === 'pendiente_supervisor') {
+    return 'pending_supervisor';
+  }
+
+  if (normalized === 'pending_quality' || normalized === 'pendiente_calidad') {
+    return 'pending_quality';
+  }
+
+  if (normalized === 'pending_management' || normalized === 'pendiente_gerencia') {
+    return 'pending_management';
+  }
+
+  if (
+    normalized === 'rejected' ||
+    normalized === 'rechazado' ||
+    normalized === 'rechazado_tecnico'
+  ) {
+    return 'rejected';
+  }
+
+  if (
+    normalized === 'approved' ||
+    normalized === 'aprobado' ||
+    normalized === 'completed' ||
+    normalized === 'cerrado'
+  ) {
+    return 'approved';
+  }
+
+  return 'draft';
+}
+
+function isStatusInList(
+  status: MantenimientoRegistro['status'],
+  statusList: Array<MantenimientoRegistro['status']>,
+) {
+  const canonicalStatus = normalizeMaintenanceStatus(status);
+
+  return statusList.some(
+    (allowedStatus) => normalizeMaintenanceStatus(allowedStatus) === canonicalStatus,
+  );
 }
 
 function isGlobalDashboardRole(role: string | null | undefined) {
@@ -314,6 +352,134 @@ function calculateDaysRemaining(targetDate: string | null | undefined) {
   return Math.ceil((target.getTime() - todayStart.getTime()) / millisecondsPerDay);
 }
 
+function parseJsonObject(value: string | null | undefined): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function hasArrayPayload(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+
+    return Array.isArray(parsed) && parsed.length > 0;
+  } catch {
+    return value.trim().length > 0;
+  }
+}
+
+function containsEvidenceReference(value: unknown): boolean {
+  if (!value) {
+    return false;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.toLowerCase();
+
+    return (
+      normalized.includes('evidencias-mantenimiento') ||
+      normalized.includes('evidencias/') ||
+      normalized.includes('evidencias_hvac') ||
+      normalized.includes('publicurl') ||
+      normalized.includes('storage')
+    );
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => containsEvidenceReference(item));
+  }
+
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).some((item) =>
+      containsEvidenceReference(item),
+    );
+  }
+
+  return false;
+}
+
+function resolveDataSignals(registro: MantenimientoRegistro) {
+  const notes = parseJsonObject(registro.notes);
+  const fieldResponsesPayload = notes.field_responses_payload;
+  const progressStep = Number(notes.progress_step ?? 0);
+  const hasFormPayload =
+    hasArrayPayload(fieldResponsesPayload) ||
+    progressStep >= 2 ||
+    normalizeMaintenanceStatus(registro.status) !== 'pending_technician';
+
+  return {
+    hasCompletedForm: hasFormPayload,
+    hasEvidence: containsEvidenceReference(notes),
+  };
+}
+
+function resolveSignatureProgress(registro: MantenimientoRegistro) {
+  const canonicalStatus = normalizeMaintenanceStatus(registro.status);
+  const tecnicoSigned = Boolean(registro.executed_at || registro.assigned_technician);
+  const supervisorSigned = Boolean(
+    registro.supervisor_signed_at ||
+      registro.supervisor_signed_by ||
+      ['pending_quality', 'pending_management', 'approved'].includes(canonicalStatus),
+  );
+  const qualitySigned = Boolean(
+    registro.quality_signed_at ||
+      registro.quality_signed_by ||
+      ['pending_management', 'approved'].includes(canonicalStatus),
+  );
+  const managementSigned = Boolean(
+    registro.management_signed_at ||
+      registro.management_signed_by ||
+      canonicalStatus === 'approved',
+  );
+  const steps = [
+    { label: 'Tecnico', complete: tecnicoSigned },
+    { label: 'Supervisor', complete: supervisorSigned },
+    { label: 'Calidad', complete: qualitySigned },
+    { label: 'Gerencia', complete: managementSigned },
+  ];
+  const completedCount = steps.filter((step) => step.complete).length;
+
+  return {
+    completedCount,
+    totalCount: steps.length,
+    steps,
+  };
+}
+
+function formatDateTimeUtc(value: string | null | undefined) {
+  if (!value) {
+    return 'No registrada';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('es-PA', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
 function resolveRelatedAsset(registro: DashboardOrder) {
   if (Array.isArray(registro.activos)) {
     return registro.activos[0];
@@ -369,19 +535,25 @@ async function attachAssetsToOrders(
 }
 
 function getOrderHref(registro: MantenimientoRegistro, activo?: ActivoConUuid) {
-  if (HISTORY_STATUSES.includes(registro.status as (typeof HISTORY_STATUSES)[number])) {
+  const canonicalStatus = normalizeMaintenanceStatus(registro.status);
+
+  if (canonicalStatus === 'approved') {
     return `/mantenimiento/hvac/rui/ht/${registro.uuid}`;
   }
 
-  if (SENT_STATUSES.includes(registro.status)) {
+  if (
+    canonicalStatus === 'pending_supervisor' ||
+    canonicalStatus === 'pending_quality' ||
+    canonicalStatus === 'pending_management'
+  ) {
     return `/mantenimiento/hvac/rui/enviado/${registro.uuid}`;
   }
 
-  if (REJECTED_STATUSES.includes(registro.status)) {
+  if (canonicalStatus === 'rejected') {
     return `/mantenimiento/hvac/rui/rechazado/${registro.uuid}`;
   }
 
-  if (PENDING_STATUSES.includes(registro.status)) {
+  if (canonicalStatus === 'draft' || canonicalStatus === 'pending_technician') {
     return `/mantenimiento/hvac/rui/activo/${registro.uuid}`;
   }
 
@@ -393,19 +565,25 @@ function getOrderHref(registro: MantenimientoRegistro, activo?: ActivoConUuid) {
 }
 
 function getOrderActionLabel(status: MantenimientoRegistro['status']) {
-  if (PENDING_STATUSES.includes(status)) {
+  const canonicalStatus = normalizeMaintenanceStatus(status);
+
+  if (canonicalStatus === 'draft' || canonicalStatus === 'pending_technician') {
     return 'Continuar Inspeccion';
   }
 
-  if (SENT_STATUSES.includes(status)) {
+  if (
+    canonicalStatus === 'pending_supervisor' ||
+    canonicalStatus === 'pending_quality' ||
+    canonicalStatus === 'pending_management'
+  ) {
     return 'Consultar';
   }
 
-  if (REJECTED_STATUSES.includes(status)) {
+  if (canonicalStatus === 'rejected') {
     return 'Consultar';
   }
 
-  if (status === 'approved') {
+  if (canonicalStatus === 'approved') {
     return 'Ver Reporte';
   }
 
@@ -414,7 +592,7 @@ function getOrderActionLabel(status: MantenimientoRegistro['status']) {
 
 function isClosedWorkflowRecord(registro: MantenimientoRegistro) {
   return (
-    CLOSED_WORKFLOW_STATUSES.includes(registro.status) ||
+    isStatusInList(registro.status, CLOSED_WORKFLOW_STATUSES) ||
     Boolean(registro.quality_signed_at)
   );
 }
@@ -538,7 +716,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       dashboardOrders =
         currentView === 'history'
           ? finalRecords
-          : finalRecords.filter((registro) => statusesForView.includes(registro.status));
+          : finalRecords.filter((registro) => isStatusInList(registro.status, statusesForView));
     }
 
     if (ENABLE_SUPERADMIN_DEBUG_LOGS === 'verbose' && isSuperadminDebugEnabled) {
@@ -599,19 +777,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const pendingOrders = dashboardOrders.filter((registro) =>
-    visiblePendingStatuses.includes(registro.status),
+    isStatusInList(registro.status, visiblePendingStatuses),
   );
   const sentOrders = dashboardOrders.filter((registro) =>
-    SENT_STATUSES.includes(registro.status),
+    isStatusInList(registro.status, SENT_STATUSES),
   );
   const rejectedOrders = dashboardOrders.filter(
-    (registro) => REJECTED_STATUSES.includes(registro.status),
+    (registro) => isStatusInList(registro.status, REJECTED_STATUSES),
   );
   const historyOrders =
     currentView === 'history'
       ? dashboardOrders
       : dashboardOrders.filter((registro) =>
-          HISTORY_STATUSES.includes(registro.status as (typeof HISTORY_STATUSES)[number]),
+          isStatusInList(registro.status, [...HISTORY_STATUSES]),
         );
   const visibleOrders =
     currentView === 'pending'
@@ -695,35 +873,95 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               const daysRemaining = calculateDaysRemaining(
                 registro.scheduled_date ?? activo?.next_maintenance_date,
               );
-              const isRejected = REJECTED_STATUSES.includes(registro.status);
+              const canonicalStatus = normalizeMaintenanceStatus(registro.status);
+              const statusClassName = orderStatusClasses[canonicalStatus];
+              const statusLabel = orderStatusLabel[canonicalStatus];
+              const isRejected = canonicalStatus === 'rejected';
               const actionHref = getOrderHref(registro, activo);
+              const signatureProgress = resolveSignatureProgress(registro);
+              const dataSignals = resolveDataSignals(registro);
 
               return (
                 <article
-                  className={`rounded-lg border bg-white p-4 shadow-sm ${
+                  className={`rounded-lg border bg-white p-4 shadow-sm transition hover:shadow-md ${
                     isRejected ? 'border-red-200' : 'border-slate-200'
                   }`}
                   key={registro.uuid}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-lg font-bold tracking-normal text-slate-950">
                         {displayAssetCode}
                       </p>
-                      <h2 className="mt-1 text-sm font-medium leading-5 text-slate-700">
+                      <h2 className="mt-1 line-clamp-2 text-sm font-medium leading-5 text-slate-700">
                         {displayAssetName}
                       </h2>
+                      <p className="mt-1 truncate font-mono text-[11px] font-semibold text-slate-400">
+                        {registro.record_code || 'SIN_CODIGO'}
+                      </p>
                     </div>
                     <span
-                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${orderStatusClasses[registro.status]}`}
+                      className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide ${statusClassName}`}
                     >
-                      {orderStatusLabel[registro.status]}
+                      {canonicalStatus === 'approved' ? 'REGISTRO CERRADO' : statusLabel}
                     </span>
                   </div>
 
-                  <div className="mt-4 grid gap-2 text-sm">
+                  <div className="mt-3 grid gap-2 text-sm">
                     <div className="rounded-md bg-slate-100 px-3 py-2 text-slate-700">
                       {displayLocation}
+                    </div>
+                    <div className="grid gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold text-slate-500">Tecnico ejecutor</span>
+                        <span className="truncate text-right font-bold text-slate-800">
+                          {registro.assigned_technician ?? 'No asignado'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold text-slate-500">Ejecucion UTC</span>
+                        <span className="text-right font-bold text-slate-800">
+                          {formatDateTimeUtc(registro.executed_at)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="font-bold text-slate-700">
+                          Firmas: {signatureProgress.completedCount} de {signatureProgress.totalCount}{' '}
+                          autorizadas
+                        </span>
+                        <span className="font-mono text-[10px] font-bold uppercase text-slate-400">
+                          {signatureProgress.steps
+                            .filter((step) => step.complete)
+                            .map((step) => step.label.slice(0, 3))
+                            .join(' / ') || 'Sin firmas'}
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-4 gap-1">
+                        {signatureProgress.steps.map((step) => (
+                          <div
+                            aria-label={`${step.label}: ${step.complete ? 'autorizada' : 'pendiente'}`}
+                            className={`h-1.5 rounded-full ${
+                              step.complete ? 'bg-emerald-600' : 'bg-slate-200'
+                            }`}
+                            key={step.label}
+                            title={`${step.label}: ${step.complete ? 'autorizada' : 'pendiente'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {dataSignals.hasCompletedForm ? (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700">
+                          FORM Contiene formulario diligenciado
+                        </span>
+                      ) : null}
+                      {dataSignals.hasEvidence ? (
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-800">
+                          EVID Evidencia fotografica adjunta
+                        </span>
+                      ) : null}
                     </div>
                     {activo ? (
                       <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-2">
@@ -751,7 +989,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     className={`mt-4 flex h-11 w-full items-center justify-center rounded-md px-4 text-sm font-semibold text-white transition focus:outline-none focus:ring-2 ${
                       isRejected
                         ? 'bg-red-700 hover:bg-red-800 focus:ring-red-200 active:bg-red-900'
-                        : registro.status === 'draft'
+                        : canonicalStatus === 'draft' || canonicalStatus === 'pending_technician'
                           ? 'bg-sky-700 hover:bg-sky-800 focus:ring-sky-200 active:bg-sky-900'
                           : 'bg-slate-900 hover:bg-slate-800 focus:ring-slate-300 active:bg-slate-950'
                     }`}
