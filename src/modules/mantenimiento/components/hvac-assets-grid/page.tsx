@@ -779,6 +779,31 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   );
   console.log('==========================================================================');
 
+  if (currentView === 'sent') {
+    console.log('==========================================================================');
+    console.log(
+      '🔬 AUDITORÍA INTERNA GXP [ENVIADOS] - TOTAL TARJETAS RECIBIDAS:',
+      visibleOrders?.length,
+    );
+    console.log('📊 CONTENIDO EXACTO EN VISTA ENVIADOS:');
+    console.log(
+      JSON.stringify(
+        visibleOrders?.map((r: any) => ({
+          id: r.id,
+          record_code: r.record_code,
+          raw_status_db: r.status,
+          has_technician_signature: !!r.executed_at,
+          has_supervisor_signature: !!r.supervisor_signed_at,
+          has_quality_signature: !!r.quality_signed_at,
+          has_management_signature: !!r.management_signed_at,
+        })),
+        null,
+        2,
+      ),
+    );
+    console.log('==========================================================================');
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950">
       <GridRefreshOnMount />
@@ -849,7 +874,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 registro.management_signed_by !== null || registro.management_signed_at !== null;
               const trueCanonicalStatus = isFullySigned ? 'CLOSED' : registro.status;
 
-              if (currentView === 'pending' && trueCanonicalStatus === 'CLOSED') {
+              if (
+                (currentView === 'pending' || currentView === 'sent') &&
+                trueCanonicalStatus === 'CLOSED'
+              ) {
                 return null;
               }
 

@@ -736,27 +736,41 @@ export function ChecklistForm({
                   </legend>
 
                   {isChecklist ? (
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                      {['OK', 'N/A', 'NOK'].map((option) => (
-                        <label
-                          className={`flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 has-[:checked]:border-sky-700 has-[:checked]:bg-sky-50 has-[:checked]:text-sky-800 ${
-                            isReadOnly ? 'cursor-not-allowed opacity-60' : ''
-                          }`}
-                          key={option}
-                        >
-                          <input
-                            className="sr-only"
-                            checked={(response?.value_text ?? '') === option}
-                            name={`campo-${fieldKey}`}
-                            onChange={() => handleChecklistChange(campo, option)}
-                            disabled={!!isReadOnly}
-                            required={Boolean(campo.required)}
-                            type="radio"
-                            value={option}
-                          />
-                          {option}
-                        </label>
-                      ))}
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      {['OK', 'N/A', 'NOK'].map((option) => {
+                        const isSelected = (response?.value_text ?? '') === option;
+                        const selectedClass =
+                          option === 'OK'
+                            ? 'border-emerald-800 bg-emerald-700 text-white shadow-sm'
+                            : option === 'NOK'
+                              ? 'border-red-800 bg-red-700 text-white shadow-sm'
+                              : 'border-slate-800 bg-slate-200 text-slate-950 shadow-sm';
+                        const idleClass =
+                          option === 'NOK'
+                            ? 'border-red-300 bg-white text-red-800 hover:bg-red-50'
+                            : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-50';
+
+                        return (
+                          <label
+                            className={`flex h-14 min-h-14 items-center justify-center rounded-md border-2 px-4 text-sm font-bold uppercase tracking-wide transition focus-within:ring-2 focus-within:ring-slate-900 md:h-16 md:min-h-16 md:text-base ${
+                              isSelected ? selectedClass : idleClass
+                            } ${isReadOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                            key={option}
+                          >
+                            <input
+                              className="sr-only"
+                              checked={isSelected}
+                              name={`campo-${fieldKey}`}
+                              onChange={() => handleChecklistChange(campo, option)}
+                              disabled={!!isReadOnly}
+                              required={Boolean(campo.required)}
+                              type="radio"
+                              value={option}
+                            />
+                            {option}
+                          </label>
+                        );
+                      })}
                     </div>
                   ) : null}
 

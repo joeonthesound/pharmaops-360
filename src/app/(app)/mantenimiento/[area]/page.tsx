@@ -105,10 +105,21 @@ type ChecklistSubmitResult = {
 
 type UsuarioPermisos = {
   user_email: string;
+  full_name?: string | null;
+  job_title?: string | null;
   role: string | null;
+  area?: string | null;
   can_review: boolean | null;
   can_approve: boolean | null;
   can_manage_users?: boolean | null;
+};
+
+type UsuarioOrigenInspeccion = {
+  user_email: string;
+  full_name: string | null;
+  job_title: string | null;
+  area: string | null;
+  role: string | null;
 };
 
 type FormularioRespuestaLectura = {
@@ -132,8 +143,13 @@ type RespuestaAuditada = FormularioRespuestaLectura & {
 
 type RecordNotes = {
   asset_uuid_origen?: string;
+  asset_type?: string;
+  authorized_by?: string | null;
   template_code?: string;
   captured_at?: string;
+  created_by_worker?: string | null;
+  generated_by?: string | null;
+  scheduled_plan_id?: string | null;
   gxp_workflow_comments?: Partial<
     Record<
       'supervisor' | 'quality' | 'management',
@@ -551,6 +567,71 @@ function parseRecordNotes(notes: string | null): RecordNotes {
   } catch {
     return {};
   }
+}
+
+function resolveAssetReferenceImageUrl(activo: Activo | null | undefined) {
+  const candidate = normalizeUtf8String(activo?.asset_reference_image_url);
+
+  return candidate.length > 0 ? candidate : null;
+}
+
+function resolveAssetThresholds(activo: Activo | null | undefined) {
+  if (!activo) {
+    return [];
+  }
+
+  const explicitThresholds = normalizeUtf8String(
+    activo.critical_operational_thresholds ?? activo.operating_thresholds,
+  );
+
+  return [
+    ['Capacidad nominal', `${activo.capacity} ${activo.capacity_unit}`],
+    ['Frecuencia validada', activo.maintenance_frequency],
+    ['Proximo mantenimiento', activo.next_maintenance_date ?? 'No programado'],
+    ['Umbrales criticos', explicitThresholds || 'No registrados en ficha maestra'],
+  ] as const;
+}
+
+function getInitials(value: string | null | undefined) {
+  const normalizedValue = normalizeUtf8String(value);
+
+  if (!normalizedValue) {
+    return 'NA';
+  }
+
+  return normalizedValue
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((segment) => segment.charAt(0).toUpperCase())
+    .join('');
+}
+
+function resolveInspectionOriginLabel(
+  notes: RecordNotes,
+  originProfile: UsuarioOrigenInspeccion | null,
+  fallbackEmail: string | null | undefined,
+) {
+  if (notes.created_by_worker || notes.scheduled_plan_id) {
+    return {
+      mode: 'automatic' as const,
+      title: '⚙️ GENERADO AUTOMÁTICAMENTE POR EL SISTEMA (Plan Preventivo Automatizado)',
+      detail: notes.scheduled_plan_id
+        ? `Plan preventivo: ${notes.scheduled_plan_id}`
+        : `Worker: ${notes.created_by_worker}`,
+      initials: 'SYS',
+    };
+  }
+
+  const displayName = originProfile?.full_name || fallbackEmail || 'Usuario administrativo no registrado';
+  const department = originProfile?.area || originProfile?.job_title || originProfile?.role || 'Departamento no registrado';
+
+  return {
+    mode: 'manual' as const,
+    title: displayName,
+    detail: department,
+    initials: getInitials(displayName),
+  };
 }
 
 function parseSignatureComments(comentarios: string | null): ParsedSignatureComments {
@@ -1625,7 +1706,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
     userEmail
       ? supabase
           .from('usuarios_roles')
-          .select('user_email, role, can_review, can_approve, can_manage_users')
+          .select('user_email, full_name, job_title, role, area, can_review, can_approve, can_manage_users')
           .eq('user_email', userEmail)
           .eq('active', true)
           .maybeSingle()
@@ -1647,6 +1728,25 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   const orderedResponses = buildOrderedResponses(respuestas, campos);
   const responsesBySection = groupAuditResponsesBySection(orderedResponses);
   const notes = parseRecordNotes(maintenanceRecord?.notes ?? null);
+  const originUserEmail =
+    normalizeUtf8String(notes.authorized_by) ||
+    normalizeUtf8String(notes.generated_by) ||
+    normalizeUtf8String(maintenanceRecord?.assigned_technician);
+  const { data: originProfileData } = originUserEmail
+    ? await supabase
+        .from('usuarios_roles')
+        .select('user_email, full_name, job_title, area, role')
+        .eq('user_email', originUserEmail)
+        .eq('active', true)
+        .maybeSingle()
+    : { data: null };
+  const originProfile = originProfileData as UsuarioOrigenInspeccion | null;
+  const inspectionOrigin = resolveInspectionOriginLabel(notes, originProfile, originUserEmail);
+  const assetReferenceImageUrl = resolveAssetReferenceImageUrl(activoHVAC);
+  const assetThresholds = resolveAssetThresholds(activoHVAC);
+  const formTitle = `${maintenanceRecord?.record_code ?? 'Documento unico de inspeccion'} - Protocolo de Inspección HVAC: ${
+    activoHVAC?.asset_name ?? 'Activo HVAC no disponible'
+  }`;
   const technicianGxpComment =
     notes.technical_observations ||
     resolveSignatureAuditComment(auditTrailRows, 'technician') ||
@@ -2292,7 +2392,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                 Protocolo de Inspeccion y Mantenimiento de HVAC
               </p>
               <h1 className="mt-1 text-2xl font-black tracking-normal">
-                {maintenanceRecord?.record_code ?? 'Documento unico de inspeccion'}
+                {formTitle}
               </h1>
               <p className="mt-1 text-sm text-slate-700">
                 RUI UUID:{' '}
@@ -2334,6 +2434,69 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
             </div>
           </div>
         </header>
+
+        <section className="print:hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <details className="group rounded-md border border-slate-200 bg-slate-50 open:bg-white" open>
+              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-900">
+                Ficha Tecnica de Referencia
+                <span className="text-xs font-bold text-slate-600 group-open:hidden">Expandir</span>
+                <span className="hidden text-xs font-bold text-slate-600 group-open:inline">Ocultar</span>
+              </summary>
+              <div className="grid gap-3 border-t border-slate-200 p-4 sm:grid-cols-2">
+                {[
+                  ['Marca', activoHVAC?.brand ?? 'No disponible'],
+                  ['Modelo', activoHVAC?.model ?? 'No disponible'],
+                  ['Numero de serie', activoHVAC?.serial_number ?? 'No disponible'],
+                  ['Proveedor tecnico', activoHVAC?.technical_provider ?? 'No disponible'],
+                  ...assetThresholds,
+                ].map(([label, value]) => (
+                  <div className="rounded-md border border-slate-200 bg-white px-3 py-2" key={label}>
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-600">
+                      {label}
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-slate-950">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </details>
+
+            <div className="grid gap-3">
+              <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                {assetReferenceImageUrl ? (
+                  <img
+                    alt={`Referencia visual de ${activoHVAC?.asset_name ?? 'activo HVAC'}`}
+                    className="h-44 w-full object-cover"
+                    src={assetReferenceImageUrl}
+                  />
+                ) : (
+                  <div className="flex h-44 items-center justify-center px-4 text-center text-sm font-bold text-slate-700">
+                    Imagen de referencia no registrada
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-md border border-slate-300 bg-slate-950 p-3 text-white">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-200">
+                  Origen de la Inspeccion / Solicitante
+                </p>
+                <div className="mt-3 flex items-center gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-slate-950">
+                    {inspectionOrigin.initials}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-black leading-5 text-white">
+                      {inspectionOrigin.title}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-200">
+                      {inspectionOrigin.detail}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <div className="print:hidden">
           <div className="mb-3 flex justify-end">

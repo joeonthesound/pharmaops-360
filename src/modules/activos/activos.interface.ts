@@ -27,4 +27,7 @@ export interface Activo {
   technical_provider: string | null;
   qr_possible: boolean;
   notes: string;
+  asset_reference_image_url?: string | null;
+  critical_operational_thresholds?: string | null;
+  operating_thresholds?: string | null;
 }
