@@ -33,6 +33,32 @@ function isTechnicianRole(role: string) {
   return normalizedRole.includes('tecnico') || normalizedRole.includes('técnico');
 }
 
+function resolveProfileRoleSlug(role: string) {
+  const normalizedRole = role
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (normalizedRole.includes('tecnico') || normalizedRole.includes('technician')) {
+    return 'technician';
+  }
+
+  if (normalizedRole.includes('supervisor')) {
+    return 'supervisor';
+  }
+
+  if (
+    normalizedRole.includes('calidad') ||
+    normalizedRole.includes('quality') ||
+    normalizedRole.includes('qa')
+  ) {
+    return 'quality';
+  }
+
+  return 'management';
+}
+
 function getStaticBreadcrumbLabel(segment: string) {
   const labels: Record<string, string> = {
     activos: 'Activos',
@@ -156,9 +182,10 @@ export function AppShell({
   const pathname = usePathname();
   const initials = getInitials(currentUserName || 'P360') || 'P';
   const isTechnicianProfile = isTechnicianRole(currentRole);
+  const profileHref = `/admin/user/${resolveProfileRoleSlug(currentRole)}`;
   const profileContainerClass = isTechnicianProfile
-    ? 'flex min-h-11 items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-blue-900 shadow-sm'
-    : 'flex min-h-11 items-center gap-3 rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm';
+    ? 'flex min-h-11 items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-blue-900 shadow-sm transition hover:border-blue-400 hover:bg-blue-100'
+    : 'flex min-h-11 items-center gap-3 rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm transition hover:border-slate-300 hover:bg-slate-50';
   const avatarClass = isTechnicianProfile
     ? 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-900 text-xs font-semibold text-white'
     : 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white';
@@ -235,7 +262,11 @@ export function AppShell({
               <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-600" />
             </button>
 
-            <div className={`${profileContainerClass} shrink-0`}>
+            <Link
+              aria-label="Mi Perfil"
+              className={`${profileContainerClass} shrink-0`}
+              href={profileHref}
+            >
               <div className={avatarClass}>
                 {initials}
               </div>
@@ -250,7 +281,7 @@ export function AppShell({
                   {currentUserEmail}
                 </p>
               </div>
-            </div>
+            </Link>
           </div>
         </header>
 
