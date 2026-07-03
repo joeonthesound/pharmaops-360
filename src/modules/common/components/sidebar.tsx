@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   Activity,
   AlertTriangle,
@@ -108,6 +109,14 @@ function isActivosNode(node: NavigationNode): boolean {
   );
 }
 
+function isDashboardNode(node: NavigationNode): boolean {
+  return node.title === 'Panel General' && node.href === '/dashboard';
+}
+
+function isDashboardRouteCollision(node: NavigationNode): boolean {
+  return Boolean(node.href && getHrefPath(node.href) === '/dashboard' && !isDashboardNode(node));
+}
+
 function NavigationIcon({ name, className }: { name?: string; className: string }) {
   if (!name || !(name in iconMap)) {
     return null;
@@ -127,6 +136,9 @@ export function Sidebar({
 }: SidebarProps) {
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
+  const pathname = usePathname();
+  const activePath = pathname || currentPath;
+  const isDashboardActive = activePath === '/dashboard';
   const theme = resolveTheme(currentRole);
   const navigation = useMemo(
     () => filterNavigationByRole(NAVIGATION_TREE, currentRole, capabilities),
@@ -147,44 +159,60 @@ export function Sidebar({
 
     const hrefPath = getHrefPath(node.href);
 
+    if (isDashboardActive) {
+      return isDashboardNode(node);
+    }
+
+    if (isDashboardRouteCollision(node)) {
+      return false;
+    }
+
     if (hrefPath === '/mantenimiento') {
-      return currentPath.startsWith('/mantenimiento');
+      return activePath.startsWith('/mantenimiento');
     }
 
     if (hrefPath === '/activos') {
-      return currentPath.startsWith('/activos');
+      return activePath.startsWith('/activos');
     }
 
     if (hrefPath.includes('[uuid]')) {
       const basePath = hrefPath.replace('/[uuid]', '');
-      return currentPath.startsWith(basePath);
+      return activePath.startsWith(basePath);
     }
 
-    return !node.href.includes('?') && currentPath === hrefPath;
+    return !node.href.includes('?') && activePath === hrefPath;
   }
 
   function isNodeRouteOpen(node: NavigationNode) {
+    if (isDashboardActive) {
+      return isDashboardNode(node);
+    }
+
+    if (isDashboardRouteCollision(node)) {
+      return false;
+    }
+
     if (node.href && getHrefPath(node.href) === '/mantenimiento') {
-      return currentPath.startsWith('/mantenimiento');
+      return activePath.startsWith('/mantenimiento');
     }
 
     if (node.title === 'HVAC') {
-      return currentPath.startsWith('/mantenimiento/hvac');
+      return activePath.startsWith('/mantenimiento/hvac');
     }
 
     if (node.href && getHrefPath(node.href) === '/activos') {
-      return currentPath.startsWith('/activos');
+      return activePath.startsWith('/activos');
     }
 
     if (node.href && getHrefPath(node.href) === '/activos/hvac') {
-      return currentPath.startsWith('/activos/hvac');
+      return activePath.startsWith('/activos/hvac');
     }
 
     if (node.href && getHrefPath(node.href).includes('[uuid]')) {
-      return currentPath.startsWith(getHrefPath(node.href).replace('/[uuid]', ''));
+      return activePath.startsWith(getHrefPath(node.href).replace('/[uuid]', ''));
     }
 
-    return Boolean(node.href && currentPath === getHrefPath(node.href));
+    return Boolean(node.href && activePath === getHrefPath(node.href));
   }
 
   function hasActiveDescendant(node: NavigationNode): boolean {
@@ -196,11 +224,12 @@ export function Sidebar({
   function renderNode(node: NavigationNode, depth = 0) {
     const hasChildren = Boolean(node.children?.length);
     const hasActiveChild = hasActiveDescendant(node);
-    const isOpen = Boolean(openMenus[node.title]) || isNodeRouteOpen(node) || hasActiveChild;
+    const isOpen =
+      !isDashboardActive && (Boolean(openMenus[node.title]) || isNodeRouteOpen(node) || hasActiveChild);
     const isActive = isNodeActive(node);
-    const isMaintenanceRoute = currentPath.startsWith('/mantenimiento');
+    const isMaintenanceRoute = activePath.startsWith('/mantenimiento');
     const isMaintenanceTreeNode = isMaintenanceRoute && isMaintenanceNode(node);
-    const isActivosRoute = currentPath.startsWith('/activos');
+    const isActivosRoute = activePath.startsWith('/activos');
     const isActivosTreeNode = isActivosRoute && isActivosNode(node);
     const isMaintenanceActive =
       isMaintenanceTreeNode && (isActive || isOpen || hasActiveChild || depth > 0);
@@ -275,7 +304,7 @@ export function Sidebar({
       return null;
     }
 
-    const resolvedHref = resolveNavigationHref(node.href, currentPath);
+    const resolvedHref = resolveNavigationHref(node.href, activePath);
 
     if (!resolvedHref) {
       return (

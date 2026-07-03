@@ -231,7 +231,7 @@ export function AppShell({
           isSidebarCollapsed ? 'md:pl-16' : 'md:pl-64'
         }`}
       >
-        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white px-4 py-3 print:hidden">
+        <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-md print:hidden">
           <div className="flex min-w-0 items-center gap-3">
             <button
               aria-label="Abrir navegación"
