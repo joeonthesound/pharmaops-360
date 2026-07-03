@@ -66,6 +66,12 @@ export const ALL_NAVIGATION_ROLES = [
 
 export const NAVIGATION_TREE: NavigationNode[] = [
   {
+    title: 'Panel General',
+    href: '/dashboard',
+    icon: 'LayoutDashboard',
+    roles: ['*'],
+  },
+  {
     title: 'Auditoría',
     href: '/auditoria',
     icon: 'ShieldCheck',
@@ -184,6 +190,22 @@ export const NAVIGATION_TREE: NavigationNode[] = [
         href: '/admin/usuarios',
         icon: 'Users',
         rolesAllowed: ['Administrador', 'Administrativo'],
+      },
+    ],
+  },
+  {
+    title: 'Administracion y Seguridad',
+    icon: 'Settings',
+    children: [
+      {
+        title: 'Panel Analitico Admin',
+        href: '/admin',
+        icon: 'LayoutDashboard',
+      },
+      {
+        title: 'Hub de Perfiles Regulados',
+        href: '/admin/user',
+        icon: 'Users',
       },
     ],
   },

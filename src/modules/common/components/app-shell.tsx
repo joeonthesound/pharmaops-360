@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Bell, ChevronRight, Menu } from 'lucide-react';
+import { Bell, ChevronRight, LayoutDashboard, Menu, UserCircle } from 'lucide-react';
 import { Sidebar } from './sidebar';
 import { supabase } from '@/shared/lib/supabase';
 
@@ -262,11 +262,7 @@ export function AppShell({
               <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-600" />
             </button>
 
-            <Link
-              aria-label="Mi Perfil"
-              className={`${profileContainerClass} shrink-0`}
-              href={profileHref}
-            >
+            <div className={`${profileContainerClass} shrink-0`}>
               <div className={avatarClass}>
                 {initials}
               </div>
@@ -281,7 +277,25 @@ export function AppShell({
                   {currentUserEmail}
                 </p>
               </div>
-            </Link>
+              <div className="ml-1 flex items-center gap-1 border-l border-current/10 pl-2">
+                <Link
+                  aria-label="Ir al Panel General"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md transition hover:bg-white/70 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  href="/dashboard"
+                  title="Panel General"
+                >
+                  <LayoutDashboard aria-hidden="true" size={17} />
+                </Link>
+                <Link
+                  aria-label="Mi Perfil"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md transition hover:bg-white/70 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  href={profileHref}
+                  title="Mi Perfil"
+                >
+                  <UserCircle aria-hidden="true" size={18} />
+                </Link>
+              </div>
+            </div>
           </div>
         </header>
 
