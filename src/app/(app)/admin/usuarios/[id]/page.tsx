@@ -35,7 +35,7 @@ export default async function EditarUsuarioPage({ params }: EditarUsuarioPagePro
   const { data } = await supabase
     .from('usuarios_roles')
     .select(
-      'id, user_email, full_name, job_title, role, user_type, site, area, active, can_create_assets, can_execute_maintenance, can_review, can_approve, can_view_audit, can_manage_users, requires_2fa, notes',
+      'id, user_email, full_name, job_title, role, user_type, site, area, active, can_create_assets, can_execute_maintenance, can_review, can_approve, can_view_audit, can_access_forensic_sheet, can_export_controlled_copies, can_manage_users, requires_2fa, notes',
     )
     .eq('id', userId)
     .maybeSingle();

@@ -1,10 +1,15 @@
 export type UsuarioRolNombre =
+  | 'tecnico'
+  | 'supervisor'
+  | 'calidad'
+  | 'gerencia'
+  | 'auditor'
   | 'Administrador'
   | 'Administrativo'
   | 'Propietario / Gerencia'
   | 'Calidad'
   | 'Supervisor'
-  | 'Técnico'
+  | 'Tecnico'
   | 'Temporal';
 
 export type UsuarioTipo = 'Interno' | 'Externo';
@@ -24,6 +29,8 @@ export interface UsuarioRol {
   can_review: boolean;
   can_approve: boolean;
   can_view_audit: boolean;
+  can_access_forensic_sheet?: boolean;
+  can_export_controlled_copies?: boolean;
   can_manage_users: boolean;
   requires_2fa: boolean;
   active: boolean;

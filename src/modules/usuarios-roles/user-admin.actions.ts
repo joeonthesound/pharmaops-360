@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
+import { ENABLE_SUPERADMIN_DEBUG_LOGS } from '@/modules/mantenimiento/debug';
 import type { UsuarioRolNombre, UsuarioTipo } from './usuarios-roles.interface';
 
 type AdminScope = 'root_superuser' | 'functional_admin';
@@ -19,6 +20,13 @@ type UsuarioObjetivo = {
   user_email: string;
 };
 
+type SupabaseDiagnosticError = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+} | null;
+
 export type UpsertUserInput = {
   id?: number;
   user_email: string;
@@ -34,6 +42,8 @@ export type UpsertUserInput = {
   can_review: boolean;
   can_approve: boolean;
   can_view_audit?: boolean;
+  can_access_forensic_sheet?: boolean;
+  can_export_controlled_copies?: boolean;
   can_manage_users?: boolean;
   requires_2fa?: boolean;
   notes?: string | null;
@@ -55,6 +65,48 @@ const FUNCTIONAL_ADMIN_EMAILS = ['albis@labymed.com'];
 const ROOT_GUARD_ERROR =
   'Operación no autorizada: Privilegios insuficientes sobre cuenta raíz';
 const DEFAULT_SITE = 'Planta Central';
+
+function buildSupabaseDiagnostics(error: SupabaseDiagnosticError | unknown) {
+  if (!error || typeof error !== 'object') {
+    return {
+      code: 'unknown_error',
+      message: error instanceof Error ? error.message : 'Unknown Supabase mutation error',
+      details: null,
+      hint: null,
+    };
+  }
+
+  const supabaseError = error as SupabaseDiagnosticError;
+
+  return {
+    code: supabaseError?.code ?? 'unknown_error',
+    message: supabaseError?.message ?? 'No Supabase error message returned',
+    details: supabaseError?.details ?? null,
+    hint: supabaseError?.hint ?? null,
+  };
+}
+
+function logD10SServerException(stage: string, context: Record<string, unknown>) {
+  if (!ENABLE_SUPERADMIN_DEBUG_LOGS) {
+    return;
+  }
+
+  console.error('[D10S SERVER EXCEPTION] User administration dispatcher failure', {
+    stage,
+    ...context,
+  });
+}
+
+function logD10SServerTrace(stage: string, context: Record<string, unknown>) {
+  if (!ENABLE_SUPERADMIN_DEBUG_LOGS) {
+    return;
+  }
+
+  console.log('[D10S SERVER TRACE] User administration dispatcher', {
+    stage,
+    ...context,
+  });
+}
 
 function normalizeEmail(email: string) {
   return String(email ?? '').trim().toLowerCase();
@@ -125,6 +177,8 @@ function sanitizeUpsertInput(input: UpsertUserInput) {
     can_review: Boolean(input.can_review),
     can_approve: Boolean(input.can_approve),
     can_view_audit: Boolean(input.can_view_audit),
+    can_access_forensic_sheet: Boolean(input.can_access_forensic_sheet),
+    can_export_controlled_copies: Boolean(input.can_export_controlled_copies),
     can_manage_users: Boolean(input.can_manage_users),
     requires_2fa: false,
   };
@@ -144,6 +198,10 @@ export async function assertRootAdminAccess(): Promise<{
   const actorEmail = normalizeEmail(user?.email ?? '');
 
   if (sessionError || !actorEmail) {
+    logD10SServerException('session_validation', {
+      supabase: buildSupabaseDiagnostics(sessionError),
+      actorEmailPresent: Boolean(actorEmail),
+    });
     throw new Error('Acceso denegado: sesión administrativa no válida.');
   }
 
@@ -155,12 +213,22 @@ export async function assertRootAdminAccess(): Promise<{
     .maybeSingle();
 
   if (profileError || !profile) {
+    logD10SServerException('admin_profile_lookup', {
+      actorEmail,
+      supabase: buildSupabaseDiagnostics(profileError),
+      profileFound: Boolean(profile),
+    });
     throw new Error('Acceso denegado: usuario sin perfil administrativo activo.');
   }
 
   const scope = resolveAdminScope(profile as UsuarioAdministrador);
 
   if (!scope) {
+    logD10SServerException('admin_scope_validation', {
+      actorEmail,
+      profileRole: (profile as UsuarioAdministrador).role,
+      canManageUsers: (profile as UsuarioAdministrador).can_manage_users,
+    });
     throw new Error('Acceso denegado: privilegios insuficientes para administrar usuarios.');
   }
 
@@ -171,11 +239,50 @@ export async function upsertUserAction(
   input: UpsertUserInput,
 ): Promise<UserAdminActionResult> {
   try {
+    console.error('[CRITICAL DEBUG BYPASS] upsertUserAction try block entered');
+    console.log(
+      '[CRITICAL DEBUG BYPASS] Raw input arriving at server action:',
+      JSON.stringify(input, null, 2),
+    );
+
     const actor = await assertRootAdminAccess();
     const payload = sanitizeUpsertInput(input);
     const timestampUtc = new Date().toISOString();
 
+    console.log(
+      '🚨 [CRITICAL DEBUG BYPASS] Raw payload arriving at server action:',
+      JSON.stringify(payload, null, 2),
+    );
+
+    logD10SServerTrace('payload_sanitized', {
+      mode: payload.id ? 'update' : 'insert',
+      actorEmail: actor.actorEmail,
+      targetEmail: payload.user_email,
+      role: payload.role,
+      area: payload.area,
+      jobTitle: payload.job_title,
+      permissionSnapshot: {
+        active: payload.active,
+        can_create_assets: payload.can_create_assets,
+        can_execute_maintenance: payload.can_execute_maintenance,
+        can_review: payload.can_review,
+        can_approve: payload.can_approve,
+        can_view_audit: payload.can_view_audit,
+        can_access_forensic_sheet: payload.can_access_forensic_sheet,
+        can_export_controlled_copies: payload.can_export_controlled_copies,
+        can_manage_users: payload.can_manage_users,
+      },
+    });
+
     if (!payload.user_email || !payload.full_name || !payload.job_title || !payload.area) {
+      logD10SServerException('input_validation', {
+        code: 'missing_required_fields',
+        targetEmail: payload.user_email,
+        hasFullName: Boolean(payload.full_name),
+        hasJobTitle: Boolean(payload.job_title),
+        hasArea: Boolean(payload.area),
+      });
+
       return {
         ok: false,
         error: 'Campos obligatorios incompletos para administrar usuario.',
@@ -187,6 +294,12 @@ export async function upsertUserAction(
     }
 
     if (isRootSuperuserEmail(payload.user_email) && actor.scope !== 'root_superuser') {
+      logD10SServerException('sod_root_guard', {
+        code: 'functional_admin_blocked',
+        actorEmail: actor.actorEmail,
+        targetEmail: payload.user_email,
+      });
+
       return {
         ok: false,
         error: ROOT_GUARD_ERROR,
@@ -208,6 +321,12 @@ export async function upsertUserAction(
         .maybeSingle();
 
       if (targetError || !targetUser) {
+        logD10SServerException('target_lookup', {
+          targetUserId: payload.id,
+          supabase: buildSupabaseDiagnostics(targetError),
+          targetFound: Boolean(targetUser),
+        });
+
         return {
           ok: false,
           error: 'No fue posible localizar el usuario objetivo.',
@@ -221,6 +340,12 @@ export async function upsertUserAction(
       const target = targetUser as UsuarioObjetivo;
 
       if (isRootSuperuserEmail(target.user_email) && actor.scope !== 'root_superuser') {
+        logD10SServerException('sod_root_guard', {
+          code: 'functional_admin_blocked',
+          actorEmail: actor.actorEmail,
+          targetEmail: target.user_email,
+        });
+
         return {
           ok: false,
           error: ROOT_GUARD_ERROR,
@@ -248,6 +373,8 @@ export async function upsertUserAction(
           can_review: payload.can_review,
           can_approve: payload.can_approve,
           can_view_audit: payload.can_view_audit,
+          can_access_forensic_sheet: payload.can_access_forensic_sheet,
+          can_export_controlled_copies: payload.can_export_controlled_copies,
           can_manage_users: payload.can_manage_users,
           requires_2fa: payload.requires_2fa,
           notes: buildAuditNotes({
@@ -260,13 +387,28 @@ export async function upsertUserAction(
         .eq('id', payload.id);
 
       if (error) {
+        const diagnostics = buildSupabaseDiagnostics(error);
+
+        console.error('💥 [RAW SUPABASE ERROR CODE]:', error.code);
+        console.error('💥 [RAW SUPABASE ERROR MESSAGE]:', error.message);
+        console.error('💥 [RAW SUPABASE ERROR DETAILS]:', error.details);
+        console.error('💥 [RAW SUPABASE ERROR HINT]:', error.hint);
+
+        logD10SServerException('user_update', {
+          action: 'usuarios_roles.update',
+          targetUserId: payload.id,
+          targetEmail: payload.user_email,
+          supabase: diagnostics,
+          rlsOrConstraintDetails: diagnostics.details,
+        });
+
         return {
           ok: false,
           error: 'No fue posible actualizar el usuario.',
           debug: {
             stage: 'user_update',
-            code: error.code,
-            details: error.message,
+            code: diagnostics.code,
+            details: diagnostics,
           },
         };
       }
@@ -285,6 +427,8 @@ export async function upsertUserAction(
         can_review: payload.can_review,
         can_approve: payload.can_approve,
         can_view_audit: payload.can_view_audit,
+        can_access_forensic_sheet: payload.can_access_forensic_sheet,
+        can_export_controlled_copies: payload.can_export_controlled_copies,
         can_manage_users: payload.can_manage_users,
         requires_2fa: payload.requires_2fa,
         notes: buildAuditNotes({
@@ -296,13 +440,30 @@ export async function upsertUserAction(
       });
 
       if (error) {
+        const diagnostics = buildSupabaseDiagnostics(error);
+
+        console.error('💥 [RAW SUPABASE ERROR CODE]:', error.code);
+        console.error('💥 [RAW SUPABASE ERROR MESSAGE]:', error.message);
+        console.error('💥 [RAW SUPABASE ERROR DETAILS]:', error.details);
+        console.error('💥 [RAW SUPABASE ERROR HINT]:', error.hint);
+
+        logD10SServerException('user_insert', {
+          action: 'usuarios_roles.insert',
+          targetEmail: payload.user_email,
+          role: payload.role,
+          area: payload.area,
+          jobTitle: payload.job_title,
+          supabase: diagnostics,
+          rlsOrConstraintDetails: diagnostics.details,
+        });
+
         return {
           ok: false,
           error: 'No fue posible crear el usuario.',
           debug: {
             stage: 'user_insert',
-            code: error.code,
-            details: error.message,
+            code: diagnostics.code,
+            details: diagnostics,
           },
         };
       }
@@ -317,6 +478,23 @@ export async function upsertUserAction(
         : 'Usuario creado con huella de auditoría.',
     };
   } catch (error) {
+    console.error('[CRITICAL DEBUG BYPASS] upsertUserAction catch block entered');
+    console.error(
+      '[CRITICAL DEBUG BYPASS] Raw caught exception:',
+      error instanceof Error
+        ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+          }
+        : error,
+    );
+
+    logD10SServerException('controlled_exception', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Error inesperado en administracion.',
