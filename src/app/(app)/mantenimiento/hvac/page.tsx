@@ -50,7 +50,7 @@ export default function HvacDashboardPage() {
 
         <Link
           className="inline-flex h-11 w-full items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 sm:w-fit"
-          href="/mantenimiento/hvac/activos"
+          href="/mantenimiento/hvac/rui/activo"
         >
           Ver activos HVAC
         </Link>

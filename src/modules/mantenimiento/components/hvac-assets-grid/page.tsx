@@ -1,6 +1,7 @@
 ﻿import Link from 'next/link';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import type { Activo, ActivoEstado } from '@/modules/activos/activos.interface';
+import { GridRefreshOnMount } from './grid-refresh-on-mount';
 import { TechnicalHistoryGrid } from './technical-history-grid';
 
 const ENABLE_SUPERADMIN_DEBUG_LOGS: boolean | 'verbose' = false;
@@ -30,7 +31,6 @@ type MaintenanceStatus =
   | 'pending_management'
   | 'rejected'
   | 'approved'
-  | 'Draft'
   | 'DRAFT'
   | 'PENDING_TECHNICIAN'
   | 'PENDING_SUPERVISOR'
@@ -38,17 +38,10 @@ type MaintenanceStatus =
   | 'PENDING_MANAGEMENT'
   | 'RECHAZADO_TECNICO'
   | 'APPROVED'
-  | 'Pending_Supervisor'
-  | 'Pending_Quality'
-  | 'Rejected'
-  | 'Approved'
-  | 'Completed'
-  | 'Borrador'
-  | 'Pendiente_Supervisor'
-  | 'Pendiente_Calidad'
-  | 'Rechazado'
-  | 'Aprobado'
-  | 'Cerrado';
+  | 'CLOSED'
+  | 'VALIDATED'
+  | 'closed'
+  | 'validated';
 
 type MantenimientoRegistro = {
   uuid: string;
@@ -66,15 +59,13 @@ type MantenimientoRegistro = {
   management_signed_by?: string | null;
   management_signed_at?: string | null;
   notes?: string | null;
+  field_responses_payload?: unknown;
   rejection_comments?: string | null;
 };
 
 type DashboardOrder = MantenimientoRegistro & {
   activos: ActivoConUuid | ActivoConUuid[] | null;
 };
-
-const TECHNICIAN_ACTIONABLE_STATUS_FILTER =
-  'status.eq.DRAFT,status.eq.draft,status.eq.PENDING_TECHNICIAN,status.eq.pending_technician';
 
 const estadoClasses: Record<ActivoEstado, string> = {
   Operativo: 'border-emerald-200 bg-emerald-50 text-emerald-800',
@@ -146,23 +137,15 @@ const PENDING_STATUSES: Array<MantenimientoRegistro['status']> = [
 const REJECTED_STATUSES: Array<MantenimientoRegistro['status']> = [
   'RECHAZADO_TECNICO',
 ];
-const ACTIVE_WORKFLOW_STATUSES: Array<MantenimientoRegistro['status']> = [
-  ...PENDING_STATUSES,
-  ...REJECTED_STATUSES,
-  ...SENT_STATUSES,
-];
-const CLOSED_WORKFLOW_STATUSES: Array<MantenimientoRegistro['status']> = [
-  'approved',
-  'Approved',
-  'Aprobado',
-  'Completed',
-  'Cerrado',
-];
 const HISTORY_STATUSES = [
   'APPROVED',
+  'CLOSED',
+  'VALIDATED',
+  'approved',
+  'closed',
+  'validated',
   'PENDING_MANAGEMENT',
 ] as const satisfies ReadonlyArray<MantenimientoRegistro['status']>;
-const CLOSED_STATUS_FILTER = `(${CLOSED_WORKFLOW_STATUSES.map((status) => `"${status}"`).join(',')})`;
 type DashboardRoleScope = 'technician' | 'supervisor' | 'quality' | 'management';
 
 function formatLocation(activo: Activo | null | undefined) {
@@ -225,6 +208,8 @@ function normalizeMaintenanceStatus(
 
   if (
     normalized === 'approved' ||
+    normalized === 'closed' ||
+    normalized === 'validated' ||
     normalized === 'aprobado' ||
     normalized === 'completed' ||
     normalized === 'cerrado'
@@ -371,6 +356,10 @@ function hasArrayPayload(value: unknown) {
     return value.length > 0;
   }
 
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>).length > 0;
+  }
+
   if (typeof value !== 'string') {
     return false;
   }
@@ -393,6 +382,10 @@ function containsEvidenceReference(value: unknown): boolean {
     const normalized = value.toLowerCase();
 
     return (
+      normalized.includes('dropzone') ||
+      normalized.includes('signature') ||
+      normalized.includes('firma') ||
+      normalized.includes('attachment') ||
       normalized.includes('evidencias-mantenimiento') ||
       normalized.includes('evidencias/') ||
       normalized.includes('evidencias_hvac') ||
@@ -416,7 +409,7 @@ function containsEvidenceReference(value: unknown): boolean {
 
 function resolveDataSignals(registro: MantenimientoRegistro) {
   const notes = parseJsonObject(registro.notes);
-  const fieldResponsesPayload = notes.field_responses_payload;
+  const fieldResponsesPayload = registro.field_responses_payload ?? notes.field_responses_payload;
   const progressStep = Number(notes.progress_step ?? 0);
   const hasFormPayload =
     hasArrayPayload(fieldResponsesPayload) ||
@@ -590,13 +583,6 @@ function getOrderActionLabel(status: MantenimientoRegistro['status']) {
   return 'Revisar y Firmar';
 }
 
-function isClosedWorkflowRecord(registro: MantenimientoRegistro) {
-  return (
-    isStatusInList(registro.status, CLOSED_WORKFLOW_STATUSES) ||
-    Boolean(registro.quality_signed_at)
-  );
-}
-
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -620,6 +606,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const currentView = normalizeView(resolvedSearchParams.view);
   const statusesForView = resolveStatusesForView(currentView, roleScope);
+  const statusFilterForView =
+    currentView === 'pending' ? visiblePendingStatuses : statusesForView;
   const historySearchTerm = String(resolvedSearchParams.q ?? '');
   const selectedHistoryAsset = String(resolvedSearchParams.asset ?? '');
   const showOnlyDeviations = resolvedSearchParams.deviations === 'true';
@@ -647,20 +635,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       .order('executed_at', { ascending: false });
 
     if (currentView !== 'history') {
-      registrosQuery = registrosQuery.in('status', statusesForView);
+      registrosQuery = registrosQuery.in('status', statusFilterForView);
     }
 
     if (roleScope === 'technician') {
-      const technicianScopeFilter = [
-        `assigned_technician.ilike.%${technicianEmail ?? ''}%`,
-        TECHNICIAN_ACTIONABLE_STATUS_FILTER,
-      ].join(',');
-
-      registrosQuery = registrosQuery.or(technicianScopeFilter);
-    }
-
-    if (currentView === 'pending' && roleScope !== 'management') {
-      registrosQuery = registrosQuery.is('quality_signed_at', null);
+      registrosQuery = registrosQuery.ilike('assigned_technician', technicianEmail ?? '');
     }
 
     const [{ data: rawOrders }, { count: absoluteTotal }] = await Promise.all([
@@ -716,7 +695,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       dashboardOrders =
         currentView === 'history'
           ? finalRecords
-          : finalRecords.filter((registro) => isStatusInList(registro.status, statusesForView));
+          : finalRecords.filter((registro) => isStatusInList(registro.status, statusFilterForView));
     }
 
     if (ENABLE_SUPERADMIN_DEBUG_LOGS === 'verbose' && isSuperadminDebugEnabled) {
@@ -776,32 +755,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     }
   }
 
-  const pendingOrders = dashboardOrders.filter((registro) =>
-    isStatusInList(registro.status, visiblePendingStatuses),
-  );
-  const sentOrders = dashboardOrders.filter((registro) =>
-    isStatusInList(registro.status, SENT_STATUSES),
-  );
-  const rejectedOrders = dashboardOrders.filter(
-    (registro) => isStatusInList(registro.status, REJECTED_STATUSES),
-  );
-  const historyOrders =
-    currentView === 'history'
-      ? dashboardOrders
-      : dashboardOrders.filter((registro) =>
-          isStatusInList(registro.status, [...HISTORY_STATUSES]),
-        );
-  const visibleOrders =
-    currentView === 'pending'
-      ? pendingOrders
-      : currentView === 'sent'
-        ? sentOrders
-        : currentView === 'history'
-          ? historyOrders
-        : rejectedOrders;
+  const historyOrders = dashboardOrders;
+  const visibleOrders = dashboardOrders;
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950">
+      <GridRefreshOnMount />
       <section className="mx-auto flex w-full max-w-6xl flex-col gap-5">
         <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
@@ -865,6 +824,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         {!queryError && currentView !== 'history' ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {visibleOrders.map((registro) => {
+              if (currentView === 'pending' && registro.status === 'CLOSED') {
+                return null;
+              }
+
               const activo = resolveRelatedAsset(registro);
               const displayAssetCode =
                 activo?.asset_code ?? registro.asset_code ?? 'Activo no disponible';
@@ -875,7 +838,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               );
               const canonicalStatus = normalizeMaintenanceStatus(registro.status);
               const statusClassName = orderStatusClasses[canonicalStatus];
-              const statusLabel = orderStatusLabel[canonicalStatus];
+              const statusLabel =
+                canonicalStatus === 'approved' ? '🔐 REGISTRO CERRADO' : orderStatusLabel[canonicalStatus];
               const isRejected = canonicalStatus === 'rejected';
               const actionHref = getOrderHref(registro, activo);
               const signatureProgress = resolveSignatureProgress(registro);
@@ -884,26 +848,30 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               return (
                 <article
                   className={`rounded-lg border bg-white p-4 shadow-sm transition hover:shadow-md ${
-                    isRejected ? 'border-red-200' : 'border-slate-200'
+                    canonicalStatus === 'approved'
+                      ? 'border-emerald-900/20 bg-emerald-950/[0.02]'
+                      : isRejected
+                        ? 'border-red-200'
+                        : 'border-slate-200'
                   }`}
                   key={registro.uuid}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-lg font-bold tracking-normal text-slate-950">
-                        {displayAssetCode}
+                      <p className="font-mono text-lg font-black tracking-normal text-slate-950">
+                        {registro.record_code || 'SIN_CODIGO'}
                       </p>
                       <h2 className="mt-1 line-clamp-2 text-sm font-medium leading-5 text-slate-700">
                         {displayAssetName}
                       </h2>
                       <p className="mt-1 truncate font-mono text-[11px] font-semibold text-slate-400">
-                        {registro.record_code || 'SIN_CODIGO'}
+                        Activo: {displayAssetCode}
                       </p>
                     </div>
                     <span
                       className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide ${statusClassName}`}
                     >
-                      {canonicalStatus === 'approved' ? 'REGISTRO CERRADO' : statusLabel}
+                      {statusLabel}
                     </span>
                   </div>
 
@@ -928,8 +896,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                       <div className="flex items-center justify-between gap-3 text-xs">
                         <span className="font-bold text-slate-700">
-                          Firmas: {signatureProgress.completedCount} de {signatureProgress.totalCount}{' '}
-                          autorizadas
+                          Firmas: {signatureProgress.completedCount} de {signatureProgress.totalCount} autorizadas
                         </span>
                         <span className="font-mono text-[10px] font-bold uppercase text-slate-400">
                           {signatureProgress.steps
@@ -954,12 +921,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="flex flex-wrap gap-2">
                       {dataSignals.hasCompletedForm ? (
                         <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700">
-                          FORM Contiene formulario diligenciado
+                          📝 Formulario Diligenciado
                         </span>
                       ) : null}
                       {dataSignals.hasEvidence ? (
                         <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-800">
-                          EVID Evidencia fotografica adjunta
+                          📸 Evidencia Adjunta
                         </span>
                       ) : null}
                     </div>

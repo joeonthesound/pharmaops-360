@@ -1,5 +1,5 @@
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
-import HvacAssetsPage from '../../../hvac/activos/page';
+import HvacAssetsPage from '@/modules/mantenimiento/components/hvac-assets-grid/page';
 
 const ENABLE_SUPERADMIN_DEBUG_LOGS: false | 'verbose' = false;
 

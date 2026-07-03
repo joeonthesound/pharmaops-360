@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import type { Activo, ActivoEstado } from '@/modules/activos/activos.interface';
+import type { Activo } from '@/modules/activos/activos.interface';
 
 type ActivoConUuid = Activo & {
   uuid: string;
@@ -16,7 +16,6 @@ type HistoryStatus =
   | 'pending_management'
   | 'rejected'
   | 'approved'
-  | 'Draft'
   | 'DRAFT'
   | 'PENDING_TECHNICIAN'
   | 'PENDING_SUPERVISOR'
@@ -24,17 +23,10 @@ type HistoryStatus =
   | 'PENDING_MANAGEMENT'
   | 'RECHAZADO_TECNICO'
   | 'APPROVED'
-  | 'Pending_Supervisor'
-  | 'Pending_Quality'
-  | 'Rejected'
-  | 'Approved'
-  | 'Completed'
-  | 'Borrador'
-  | 'Pendiente_Supervisor'
-  | 'Pendiente_Calidad'
-  | 'Rechazado'
-  | 'Aprobado'
-  | 'Cerrado';
+  | 'CLOSED'
+  | 'VALIDATED'
+  | 'closed'
+  | 'validated';
 
 type HistoryOrder = {
   uuid: string;
@@ -58,6 +50,15 @@ type TechnicalHistoryGridProps = {
 
 const PAGE_SIZE = 10;
 
+const TERMINAL_STATUSES = [
+  'APPROVED',
+  'CLOSED',
+  'VALIDATED',
+  'approved',
+  'closed',
+  'validated',
+] as const satisfies ReadonlyArray<HistoryStatus>;
+
 const orderStatusClasses: Record<HistoryStatus, string> = {
   draft: 'border-slate-200 bg-slate-100 text-slate-700',
   pending_technician: 'border-indigo-200 bg-indigo-50 text-indigo-800',
@@ -66,7 +67,6 @@ const orderStatusClasses: Record<HistoryStatus, string> = {
   pending_management: 'border-purple-200 bg-purple-50 text-purple-800',
   rejected: 'border-red-200 bg-red-50 text-red-800',
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Draft: 'border-slate-200 bg-slate-100 text-slate-700',
   DRAFT: 'border-slate-200 bg-slate-100 text-slate-700',
   PENDING_TECHNICIAN: 'border-indigo-200 bg-indigo-50 text-indigo-800',
   PENDING_SUPERVISOR: 'border-amber-200 bg-amber-50 text-amber-800',
@@ -74,17 +74,10 @@ const orderStatusClasses: Record<HistoryStatus, string> = {
   PENDING_MANAGEMENT: 'border-purple-200 bg-purple-50 text-purple-800',
   RECHAZADO_TECNICO: 'border-red-200 bg-red-50 text-red-800',
   APPROVED: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Pending_Supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
-  Pending_Quality: 'border-sky-200 bg-sky-50 text-sky-800',
-  Rejected: 'border-red-200 bg-red-50 text-red-800',
-  Approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Completed: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Borrador: 'border-slate-200 bg-slate-100 text-slate-700',
-  Pendiente_Supervisor: 'border-amber-200 bg-amber-50 text-amber-800',
-  Pendiente_Calidad: 'border-sky-200 bg-sky-50 text-sky-800',
-  Rechazado: 'border-red-200 bg-red-50 text-red-800',
-  Aprobado: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  Cerrado: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  CLOSED: 'border-emerald-900/30 bg-emerald-950 text-white',
+  VALIDATED: 'border-emerald-900/30 bg-emerald-950 text-white',
+  closed: 'border-emerald-900/30 bg-emerald-950 text-white',
+  validated: 'border-emerald-900/30 bg-emerald-950 text-white',
 };
 
 const orderStatusLabel: Record<HistoryStatus, string> = {
@@ -95,7 +88,6 @@ const orderStatusLabel: Record<HistoryStatus, string> = {
   pending_management: 'Pendiente Gerencia',
   rejected: 'Rechazado',
   approved: 'Cerrado',
-  Draft: 'Borrador',
   DRAFT: 'Borrador',
   PENDING_TECHNICIAN: 'Pendiente Tecnico',
   PENDING_SUPERVISOR: 'Pendiente Supervisor',
@@ -103,17 +95,10 @@ const orderStatusLabel: Record<HistoryStatus, string> = {
   PENDING_MANAGEMENT: 'Pendiente Gerencia',
   RECHAZADO_TECNICO: 'Rechazado',
   APPROVED: 'Cerrado',
-  Pending_Supervisor: 'Pendiente Supervisor',
-  Pending_Quality: 'Pendiente Calidad',
-  Rejected: 'Rechazado',
-  Approved: 'Cerrado',
-  Completed: 'Cerrado',
-  Borrador: 'Borrador',
-  Pendiente_Supervisor: 'Pendiente Supervisor',
-  Pendiente_Calidad: 'Pendiente Calidad',
-  Rechazado: 'Rechazado',
-  Aprobado: 'Cerrado',
-  Cerrado: 'Cerrado',
+  CLOSED: 'REGISTRO CERRADO',
+  VALIDATED: 'REGISTRO VALIDADO',
+  closed: 'REGISTRO CERRADO',
+  validated: 'REGISTRO VALIDADO',
 };
 
 function resolveRelatedAsset(registro: HistoryOrder) {
@@ -139,8 +124,12 @@ function resolveSortableDate(registro: HistoryOrder) {
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
+function isTerminalStatus(status: HistoryStatus) {
+  return TERMINAL_STATUSES.includes(status as (typeof TERMINAL_STATUSES)[number]);
+}
+
 function isManagementSigned(registro: HistoryOrder) {
-  return Boolean(registro.management_signed_at) || registro.status === 'Cerrado';
+  return Boolean(registro.management_signed_at) || isTerminalStatus(registro.status);
 }
 
 function resolveDisplayStatusClass(registro: HistoryOrder) {
@@ -153,7 +142,7 @@ function resolveDisplayStatusClass(registro: HistoryOrder) {
 
 function resolveDisplayStatusLabel(registro: HistoryOrder) {
   if (isManagementSigned(registro)) {
-    return '🔐 Cerrado';
+    return 'REGISTRO CERRADO';
   }
 
   return orderStatusLabel[registro.status];
@@ -222,7 +211,7 @@ export function TechnicalHistoryGrid({
             <input
               className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Buscar por Código de Reporte, UUID o Nombre de Activo..."
+              placeholder="Buscar por Codigo de Reporte, UUID o Nombre de Activo..."
               type="search"
               value={searchTerm}
             />
@@ -235,7 +224,7 @@ export function TechnicalHistoryGrid({
               onChange={(event) => setSortMode(event.target.value as 'date_desc' | 'asset_asc')}
               value={sortMode}
             >
-              <option value="date_desc">Ordenar por Fecha (Más recientes primero)</option>
+              <option value="date_desc">Ordenar por Fecha (mas recientes primero)</option>
               <option value="asset_asc">Ordenar por Nombre de Activo (A-Z)</option>
             </select>
           </label>
@@ -245,7 +234,7 @@ export function TechnicalHistoryGrid({
       {paginatedOrders.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700 shadow-sm">
           {roleScope === 'technician' && orders.length === 0
-            ? '📋 No hay registros de mantenimiento asignados o creados bajo este perfil.'
+            ? 'No hay registros de mantenimiento asignados o creados bajo este perfil.'
             : 'No hay registros que coincidan con los filtros aplicados.'}
         </div>
       ) : (
