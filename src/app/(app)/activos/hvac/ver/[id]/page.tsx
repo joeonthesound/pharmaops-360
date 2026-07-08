@@ -19,6 +19,7 @@ import {
   AdminQualificationCard,
   SuperadminDestructiveCard,
 } from './asset-compliance-panels';
+import { APP_ROUTES } from '@/modules/common/routes';
 
 type ActivoHvacDetallePageProps = {
   params: Promise<{
@@ -369,7 +370,7 @@ export default async function ActivoHvacDetallePage({
                     const actionBadge = resolveActionBadge(rui);
                     const reportUuid = getReportUuid(rui);
                     const reportCode = getReportCode(rui);
-                    const reportHref = `/mantenimiento/hvac/rui/ht/${reportUuid}`;
+                    const reportHref = APP_ROUTES.mantenimiento.rui.historialDetalle(reportUuid);
 
                     return (
                       <div

@@ -12,6 +12,7 @@ import { registerNotificationsServiceWorker } from '@/lib/notifications/register
 import type { NotificationRoleContext } from '@/types/database.types';
 import { Sidebar } from './sidebar';
 import { supabase } from '@/shared/lib/supabase';
+import { APP_ROUTES } from '@/modules/common/routes';
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -90,6 +91,99 @@ function resolveProfileRoleSlug(role: string) {
   }
 
   return 'management';
+}
+
+function hashToken(value: string) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(16).padStart(8, '0').toUpperCase();
+}
+
+function getPathUuid(pathname: string) {
+  return pathname.match(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{3,4}-[0-9a-f]{3,4}-[0-9a-f]{12}/i,
+  )?.[0] ?? null;
+}
+
+function resolveScreenId(pathname: string) {
+  if (pathname === APP_ROUTES.activos.master) {
+    return 'SCREEN-ACT-MASTER-01';
+  }
+
+  if (pathname === APP_ROUTES.activos.hvac) {
+    return 'SCREEN-ACT-HVAC-01';
+  }
+
+  if (pathname === APP_ROUTES.activos.hvacProfileSearch) {
+    return 'SCREEN-ACT-PDAC-SEARCH-01';
+  }
+
+  if (pathname.startsWith(`${APP_ROUTES.activos.hvacProfileSearch}/`)) {
+    return 'SCREEN-ACT-VER-01';
+  }
+
+  if (pathname === APP_ROUTES.mantenimiento.crearOrdenes) {
+    return 'SCREEN-MNT-ORD-01';
+  }
+
+  if (pathname.includes('/aprobar')) {
+    return 'SCREEN-MNT-APR-01';
+  }
+
+  if (pathname.includes('/rui/')) {
+    return 'SCREEN-MNT-RUI-01';
+  }
+
+  if (pathname.startsWith(APP_ROUTES.mantenimiento.root)) {
+    return 'SCREEN-MNT-HVAC-01';
+  }
+
+  return 'SCREEN-GXP-OPS-01';
+}
+
+function resolveAuditHash(pathname: string) {
+  const uuid = getPathUuid(pathname);
+
+  if (uuid) {
+    return uuid.slice(0, 8).toUpperCase();
+  }
+
+  return hashToken(pathname || 'pharmaops-360').slice(0, 8);
+}
+
+function GxpMetadataStamp({
+  currentUserEmail,
+  pathname,
+}: {
+  currentUserEmail: string;
+  pathname: string;
+}) {
+  const isOperationalPath =
+    pathname.startsWith(APP_ROUTES.activos.master) ||
+    pathname.startsWith(APP_ROUTES.mantenimiento.root);
+
+  if (!isOperationalPath) {
+    return null;
+  }
+
+  const tokenClass =
+    'font-mono text-xs text-slate-500 uppercase tracking-wider bg-slate-100 px-2 py-1 rounded border border-slate-200';
+
+  return (
+    <aside
+      aria-label="GxP metadata stamp"
+      className="pointer-events-none fixed right-4 top-[76px] z-40 flex max-w-[calc(100vw-2rem)] flex-wrap justify-end gap-1.5"
+    >
+      <span className={tokenClass}>SCREEN_ID:{resolveScreenId(pathname)}</span>
+      <span className={tokenClass}>OPERATOR_ID:OP-{hashToken(currentUserEmail)}</span>
+      <span className={tokenClass}>AUDIT_HASH:{resolveAuditHash(pathname)}</span>
+    </aside>
+  );
 }
 
 function getStaticBreadcrumbLabel(segment: string) {
@@ -235,7 +329,7 @@ export function AppShell({
     <div className="min-h-screen overflow-x-hidden bg-slate-50">
       <div
         className={`hidden shrink-0 print:hidden md:fixed md:inset-y-0 md:left-0 md:block transition-[width] duration-300 ${
-          isSidebarCollapsed ? 'md:w-16 md:min-w-16' : 'md:w-[280px] md:min-w-[280px]'
+          isSidebarCollapsed ? 'md:w-16 md:min-w-16' : 'md:w-[296px] md:min-w-[296px]'
         }`}
       >
         <Sidebar
@@ -256,7 +350,7 @@ export function AppShell({
             onClick={() => setIsMobileOpen(false)}
             type="button"
           />
-          <div className="absolute inset-y-0 left-0 w-72 shadow-2xl">
+          <div className="absolute inset-y-0 left-0 w-[296px] max-w-[calc(100vw-2rem)] shadow-2xl">
             <Sidebar
               capabilities={currentCapabilities}
               currentRole={currentRole}
@@ -269,12 +363,14 @@ export function AppShell({
 
       <div
         className={`min-h-screen min-w-0 overflow-x-hidden transition-[padding] duration-300 print:pl-0 ${
-          isSidebarCollapsed ? 'md:pl-16' : 'md:pl-[280px]'
+          isSidebarCollapsed ? 'md:pl-16' : 'md:pl-[296px]'
         }`}
       >
+        <GxpMetadataStamp currentUserEmail={currentUserEmail} pathname={pathname} />
+
         <header
           className={`fixed left-0 right-0 top-0 z-50 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-md transition-[left] duration-300 print:hidden ${
-            isSidebarCollapsed ? 'md:left-16' : 'md:left-[280px]'
+            isSidebarCollapsed ? 'md:left-16' : 'md:left-[296px]'
           }`}
         >
           <div className="flex min-w-0 items-center gap-3">

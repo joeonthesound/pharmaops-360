@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -123,7 +123,14 @@ function NavigationIcon({ name, className }: { name?: string; className: string 
   }
 
   const Icon = iconMap[name as keyof typeof iconMap];
-  return <Icon aria-hidden="true" className={className} size={18} strokeWidth={2} />;
+  return (
+    <Icon
+      aria-hidden="true"
+      className={`h-[18px] w-[18px] shrink-0 ${className}`}
+      size={18}
+      strokeWidth={2}
+    />
+  );
 }
 
 export function Sidebar({
@@ -145,10 +152,10 @@ export function Sidebar({
     [capabilities, currentRole],
   );
 
-  function toggleMenu(menuKey: string, fallbackOpen: boolean) {
+  function toggleMenu(menuKey: string) {
     setOpenMenus((current) => ({
       ...current,
-      [menuKey]: !(current[menuKey] ?? fallbackOpen),
+      [menuKey]: !current[menuKey],
     }));
   }
 
@@ -221,6 +228,39 @@ export function Sidebar({
     );
   }
 
+  const routeOpenMenus = useMemo(() => {
+    const nextOpenMenus: Record<string, boolean> = {};
+
+    function collectRouteOpenMenus(nodes: NavigationNode[], parentKey = 'root') {
+      nodes.forEach((node) => {
+        const nodeKey = `${parentKey}/${node.title}:${node.href ?? 'section'}`;
+        const hasChildren = Boolean(node.children?.length);
+
+        if (hasChildren) {
+          const shouldOpenFromRoute =
+            !isDashboardActive && (isNodeRouteOpen(node) || hasActiveDescendant(node));
+
+          if (shouldOpenFromRoute) {
+            nextOpenMenus[nodeKey] = true;
+          }
+
+          collectRouteOpenMenus(node.children ?? [], nodeKey);
+        }
+      });
+    }
+
+    collectRouteOpenMenus(navigation);
+
+    return nextOpenMenus;
+  }, [activePath, isDashboardActive, navigation]);
+
+  useEffect(() => {
+    setOpenMenus((current) => ({
+      ...current,
+      ...routeOpenMenus,
+    }));
+  }, [routeOpenMenus]);
+
   function renderNode(node: NavigationNode, depth = 0, parentKey = 'root') {
     const nodeKey = `${parentKey}/${node.title}:${node.href ?? 'section'}`;
     const childrenId = `sidebar-children-${nodeKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
@@ -243,13 +283,59 @@ export function Sidebar({
     const iconClass = isMaintenanceActive || isActivosActive ? 'text-white' : theme.mutedText;
     const paddingClass = isCollapsed ? 'px-2' : 'px-4';
     const justifyClass = isCollapsed ? 'justify-center' : 'justify-between';
-    const itemClass = `${paddingClass} flex min-h-12 w-full items-center ${justifyClass} rounded-md py-3 text-left text-sm font-semibold transition ${activeTextClass} ${
+    const itemClass = `${paddingClass} flex min-h-[52px] w-full min-w-0 items-start ${justifyClass} rounded-md py-3 text-left text-sm font-semibold transition ${activeTextClass} ${
       isActive || isMaintenanceActive || isActivosActive ? activeClass : theme.item
     }`;
-    const contentClass = `flex min-w-0 flex-1 items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`;
-    const labelClass = isCollapsed ? 'hidden' : 'truncate';
+    const contentClass = `flex w-full min-w-0 flex-1 items-start gap-3.5 ${
+      isCollapsed ? 'justify-center' : ''
+    }`;
+    const labelClass = isCollapsed
+      ? 'hidden'
+      : 'block w-full whitespace-normal break-words text-left text-sm leading-tight';
+    const resolvedHref = node.href ? resolveNavigationHref(node.href, activePath) : null;
 
     if (hasChildren) {
+      if (node.title === 'Activos' && resolvedHref) {
+        return (
+          <div key={nodeKey} title={isCollapsed ? node.title : undefined}>
+            <div className={itemClass}>
+              <Link className={contentClass} href={resolvedHref}>
+                <NavigationIcon className={iconClass} name={node.icon} />
+                <span className={labelClass}>{node.title}</span>
+              </Link>
+              {!isCollapsed ? (
+                <button
+                  aria-controls={childrenId}
+                  aria-expanded={isOpen}
+                  aria-label={`Alternar ${node.title}`}
+                  className="ml-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-md transition hover:bg-white/10"
+                  onClick={() => toggleMenu(nodeKey)}
+                  type="button"
+                >
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`h-[18px] w-[18px] shrink-0 transition-transform ${iconClass} ${
+                      isOpen ? 'rotate-180' : ''
+                    }`}
+                    size={18}
+                  />
+                </button>
+              ) : null}
+            </div>
+            {isOpen ? (
+              <div
+                className={`mt-2 grid gap-2 ${
+                  isCollapsed ? '' : 'ml-6 border-l border-slate-700/50 pl-4'
+                }`}
+                id={childrenId}
+              >
+                {node.children?.map((child) => renderNode(child, depth + 1, nodeKey))}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
       return (
         <div key={nodeKey} title={isCollapsed ? node.title : undefined}>
           <button
@@ -257,7 +343,7 @@ export function Sidebar({
             aria-expanded={isOpen}
             aria-label={`Alternar ${node.title}`}
             className={itemClass}
-            onClick={() => toggleMenu(nodeKey, shouldOpenFromRoute)}
+            onClick={() => toggleMenu(nodeKey)}
             type="button"
           >
             <span className={contentClass}>
@@ -265,10 +351,12 @@ export function Sidebar({
               <span className={labelClass}>{node.title}</span>
             </span>
             {!isCollapsed ? (
-              <span className="ml-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition hover:bg-white/10">
+              <span className="ml-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-md transition hover:bg-white/10">
                 <ChevronDown
                   aria-hidden="true"
-                  className={`transition-transform ${iconClass} ${isOpen ? 'rotate-180' : ''}`}
+                  className={`h-[18px] w-[18px] shrink-0 transition-transform ${iconClass} ${
+                    isOpen ? 'rotate-180' : ''
+                  }`}
                   size={18}
                 />
               </span>
@@ -276,8 +364,8 @@ export function Sidebar({
           </button>
           {isOpen ? (
             <div
-              className={`mt-1.5 grid gap-1.5 ${
-                isCollapsed ? '' : 'ml-5 border-l border-slate-700/50 pl-3'
+              className={`mt-2 grid gap-2 ${
+                isCollapsed ? '' : 'ml-6 border-l border-slate-700/50 pl-4'
               }`}
               id={childrenId}
             >
@@ -291,8 +379,6 @@ export function Sidebar({
     if (!node.href) {
       return null;
     }
-
-    const resolvedHref = resolveNavigationHref(node.href, activePath);
 
     if (!resolvedHref) {
       return (
@@ -327,7 +413,7 @@ export function Sidebar({
   return (
     <aside
       className={`flex min-h-screen w-full shrink-0 flex-col overflow-x-hidden border-r ${
-        isCollapsed ? 'min-w-16' : 'min-w-[280px]'
+        isCollapsed ? 'min-w-16' : 'min-w-[296px]'
       } ${theme.border} ${theme.shell}`}
     >
       <div className={`border-b border-white/10 ${isCollapsed ? 'p-3' : 'p-4'}`}>
@@ -348,7 +434,7 @@ export function Sidebar({
         <label className="relative block">
           <Search
             aria-hidden="true"
-            className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${theme.mutedText}`}
+            className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 shrink-0 -translate-y-1/2 ${theme.mutedText}`}
             size={16}
           />
           <input
@@ -372,7 +458,11 @@ export function Sidebar({
           title={isCollapsed ? 'Cerrar Sesión' : undefined}
           type="submit"
         >
-          <LogOut aria-hidden="true" className={theme.mutedText} size={18} />
+          <LogOut
+            aria-hidden="true"
+            className={`h-[18px] w-[18px] shrink-0 ${theme.mutedText}`}
+            size={18}
+          />
           <span className={isCollapsed ? 'hidden' : ''}>Cerrar Sesión</span>
         </button>
       </form>
@@ -387,7 +477,9 @@ export function Sidebar({
           >
             <ChevronLeft
               aria-hidden="true"
-              className={`h-4 w-4 transition-transform ${isCollapsed ? 'rotate-180' : ''}`}
+              className={`h-4 w-4 shrink-0 transition-transform ${
+                isCollapsed ? 'rotate-180' : ''
+              }`}
             />
             <span className={isCollapsed ? 'hidden' : ''}>Colapsar</span>
           </button>

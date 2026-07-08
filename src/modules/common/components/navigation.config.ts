@@ -1,4 +1,10 @@
+import { APP_ROUTES } from '@/modules/common/routes';
 import type { NavigationNode, PharmaOpsRole, SidebarTheme } from './navigation.interface';
+
+const ROLE_TECNICO = 'T\u00e9cnico';
+const ROLE_PRODUCCION = 'Producci\u00f3n';
+const ROLE_TECNICO_DOUBLE_ENCODED = 'T\u00c3\u0192\u00c2\u00a9cnico';
+const ROLE_PRODUCCION_DOUBLE_ENCODED = 'Producci\u00c3\u0192\u00c2\u00b3n';
 
 const slateTheme: SidebarTheme = {
   shell: 'bg-slate-900',
@@ -9,8 +15,8 @@ const slateTheme: SidebarTheme = {
   border: 'border-slate-800',
 };
 
-export const ROLE_SIDEBAR_THEME: Record<PharmaOpsRole, SidebarTheme> = {
-  Técnico: {
+export const ROLE_SIDEBAR_THEME = {
+  [ROLE_TECNICO]: {
     ...slateTheme,
     mutedText: 'text-slate-300',
     itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
@@ -20,7 +26,7 @@ export const ROLE_SIDEBAR_THEME: Record<PharmaOpsRole, SidebarTheme> = {
     mutedText: 'text-emerald-200',
     itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
   },
-  Producción: {
+  [ROLE_PRODUCCION]: {
     ...slateTheme,
     mutedText: 'text-red-200',
     itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
@@ -43,14 +49,14 @@ export const ROLE_SIDEBAR_THEME: Record<PharmaOpsRole, SidebarTheme> = {
     itemActive: 'bg-slate-800 border-l-4 border-emerald-500 text-white',
   },
   'Propietario / Gerencia': slateTheme,
-};
+} as Record<PharmaOpsRole, SidebarTheme>;
 
 export const DEFAULT_SIDEBAR_THEME = ROLE_SIDEBAR_THEME.Administrativo;
 
 export const ALL_NAVIGATION_ROLES = [
   'Superadmin',
   'Aseguramiento de Calidad',
-  'Técnico',
+  ROLE_TECNICO,
   'Administrador',
   'Propietario / Gerencia',
   'Gerente General',
@@ -58,11 +64,22 @@ export const ALL_NAVIGATION_ROLES = [
   'auditor',
   'Calidad',
   'Supervisor',
-  'TÃ©cnico',
+  ROLE_TECNICO_DOUBLE_ENCODED,
   'Administrativo',
-  'ProducciÃ³n',
+  ROLE_PRODUCCION_DOUBLE_ENCODED,
   'Temporal',
 ];
+
+const HVAC_MAINTENANCE_ROLES = [
+  'Administrador',
+  'Supervisor',
+  ROLE_TECNICO,
+  'Calidad',
+  'Administrativo',
+  'Temporal',
+];
+
+const HVAC_REVIEW_ROLES = ['Administrador', 'Supervisor', ROLE_TECNICO, 'Calidad', 'Administrativo'];
 
 export const NAVIGATION_TREE: NavigationNode[] = [
   {
@@ -72,33 +89,31 @@ export const NAVIGATION_TREE: NavigationNode[] = [
     roles: ['*'],
   },
   {
-    title: 'Auditoría',
+    title: 'Auditor\u00eda',
     href: '/auditoria',
     icon: 'ShieldCheck',
     rolesAllowed: ['Auditor', 'auditor'],
   },
   {
     title: 'Activos',
-    href: '/activos',
+    href: APP_ROUTES.activos.master,
     icon: 'Layers',
     roles: ALL_NAVIGATION_ROLES,
     children: [
       {
         title: 'Sistemas HVAC',
-        href: '/activos/hvac',
+        href: APP_ROUTES.activos.hvac,
         icon: 'Wind',
         roles: ALL_NAVIGATION_ROLES,
-        children: [
-          {
-            title: 'Documento Único de Inspección',
-            href: '/activos/hvac/ver/[uuid]',
-            icon: 'Activity',
-            roles: ALL_NAVIGATION_ROLES,
-          },
-        ],
       },
       {
-        title: 'Gestión de Activos',
+        title: 'Buscador de Expedientes PDAC',
+        href: APP_ROUTES.activos.hvacProfileSearch,
+        icon: 'Activity',
+        roles: ALL_NAVIGATION_ROLES,
+      },
+      {
+        title: 'Gesti\u00f3n de Activos',
         href: '/activos/gestion?action=create',
         icon: 'PlusCircle',
         roles: ['Administrador', 'Administrativo'],
@@ -107,7 +122,7 @@ export const NAVIGATION_TREE: NavigationNode[] = [
   },
   {
     title: 'Mantenimientos',
-    href: '/mantenimiento',
+    href: APP_ROUTES.mantenimiento.root,
     icon: 'LayoutDashboard',
     requiredCapabilities: ['can_approve'],
     rolesAllowed: [
@@ -116,46 +131,46 @@ export const NAVIGATION_TREE: NavigationNode[] = [
       'Propietario / Gerencia',
       'Calidad',
       'Supervisor',
-      'Técnico',
+      ROLE_TECNICO,
       'Administrativo',
-      'Producción',
+      ROLE_PRODUCCION,
       'Temporal',
     ],
     children: [
       {
         title: 'HVAC',
         icon: 'Wrench',
-        rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo', 'Temporal'],
+        rolesAllowed: HVAC_MAINTENANCE_ROLES,
         children: [
           {
             title: 'Activos',
-            href: '/mantenimiento/hvac/rui/activo',
+            href: APP_ROUTES.mantenimiento.rui.activo,
             icon: 'Package',
-            rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo', 'Temporal'],
+            rolesAllowed: HVAC_MAINTENANCE_ROLES,
           },
           {
             title: 'Enviados',
-            href: '/mantenimiento/hvac/rui/enviado',
+            href: APP_ROUTES.mantenimiento.rui.enviado,
             icon: 'Send',
-            rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
+            rolesAllowed: HVAC_REVIEW_ROLES,
           },
           {
             title: 'Rechazados',
-            href: '/mantenimiento/hvac/rui/rechazado',
+            href: APP_ROUTES.mantenimiento.rui.rechazado,
             icon: 'AlertTriangle',
-            rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
+            rolesAllowed: HVAC_REVIEW_ROLES,
           },
           {
             title: 'Historial',
-            href: '/mantenimiento/hvac/rui/ht',
+            href: APP_ROUTES.mantenimiento.rui.historial,
             icon: 'History',
-            rolesAllowed: ['Administrador', 'Supervisor', 'Técnico', 'Calidad', 'Administrativo'],
+            rolesAllowed: HVAC_REVIEW_ROLES,
           },
         ],
       },
       {
-        title: 'Crear Órdenes',
-        href: '/mantenimiento/crear-ordenes',
+        title: 'Crear \u00d3rdenes',
+        href: APP_ROUTES.mantenimiento.crearOrdenes,
         icon: 'FlaskConical',
         requiredCapabilities: ['can_approve'],
       },
@@ -173,7 +188,7 @@ export const NAVIGATION_TREE: NavigationNode[] = [
         rolesAllowed: ['Administrador', 'Propietario / Gerencia', 'Calidad', 'Administrativo'],
       },
       {
-        title: 'Auditoría',
+        title: 'Auditor\u00eda',
         href: '/dashboard',
         icon: 'Settings',
         rolesAllowed: ['Administrador', 'Propietario / Gerencia', 'Calidad', 'Administrativo'],
@@ -181,7 +196,7 @@ export const NAVIGATION_TREE: NavigationNode[] = [
     ],
   },
   {
-    title: 'Administración',
+    title: 'Administraci\u00f3n',
     icon: 'Settings',
     rolesAllowed: ['Administrador', 'Administrativo', 'Propietario / Gerencia'],
     children: [
