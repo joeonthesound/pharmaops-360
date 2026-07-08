@@ -1,19 +1,19 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import {
-  AlertTriangle,
-  Camera,
+  Activity,
+  BarChart3,
   CheckCircle2,
   FileText,
   Gauge,
-  ImageIcon,
   ShieldCheck,
+  TrendingUp,
 } from 'lucide-react';
 import {
   getActivoDetalle,
   type ActivoReporteDetalle,
 } from '@/modules/activos/actions/get-activo-detalle';
-import { EvidencePreviewGallery } from './evidence-preview-gallery';
+import { AssetImageDialog } from './asset-image-dialog';
+import { SectionInfoTooltip } from './section-info-tooltip';
 import { SuperadminDebugPanel } from './superadmin-debug-panel';
 import {
   AdminQualificationCard,
@@ -179,6 +179,258 @@ function isSuperadminProfile(role: string | null | undefined) {
   return normalizeRole(role) === 'superadmin';
 }
 
+function getOperatorToken(value: string | null | undefined) {
+  const normalizedValue = String(value ?? '').trim().toUpperCase();
+
+  if (!normalizedValue) {
+    return 'SIN-SESION';
+  }
+
+  return normalizedValue.slice(0, 18);
+}
+
+function getAuditFootprint(paramsId: string, activoUuid: string | null | undefined) {
+  const candidate = paramsId || activoUuid || 'SIN-ID';
+  const normalizedCandidate = candidate.trim().toUpperCase();
+
+  return normalizedCandidate.length > 12
+    ? normalizedCandidate.slice(0, 12)
+    : normalizedCandidate;
+}
+
+function HeaderMetadataBadge({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="font-mono text-xs font-bold bg-slate-100 text-slate-700 px-3 py-1.5 rounded-md border border-slate-200 shadow-sm whitespace-nowrap">
+      {label}: {value}
+    </span>
+  );
+}
+
+function getReportTimestamp(reporte: ActivoReporteDetalle) {
+  const rawDate =
+    typeof reporte.executed_at === 'string'
+      ? reporte.executed_at
+      : typeof reporte.scheduled_date === 'string'
+        ? reporte.scheduled_date
+        : null;
+
+  if (!rawDate) {
+    return null;
+  }
+
+  const date = new Date(rawDate);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function calculateMtbfLabel(reportes: ActivoReporteDetalle[]) {
+  const timestamps = reportes
+    .map((reporte) => getReportTimestamp(reporte)?.getTime() ?? null)
+    .filter((timestamp): timestamp is number => typeof timestamp === 'number')
+    .sort((left, right) => left - right);
+
+  if (timestamps.length < 2) {
+    return 'N/D';
+  }
+
+  const deltas = timestamps.slice(1).map((timestamp, index) => timestamp - timestamps[index]);
+  const averageDelta = deltas.reduce((total, delta) => total + delta, 0) / deltas.length;
+  const days = Math.max(1, Math.round(averageDelta / 86_400_000));
+
+  return `${days} dias`;
+}
+
+function getCalibrationProgress(lastMaintenanceDate: string | null | undefined) {
+  if (!lastMaintenanceDate) {
+    return 0;
+  }
+
+  const calibrationDate = new Date(lastMaintenanceDate);
+
+  if (Number.isNaN(calibrationDate.getTime())) {
+    return 0;
+  }
+
+  const elapsedDays = Math.max(
+    0,
+    Math.floor((Date.now() - calibrationDate.getTime()) / 86_400_000),
+  );
+
+  return Math.min(100, Math.round((elapsedDays / 365) * 100));
+}
+
+function getStatusDeltaBlocks(reportes: ActivoReporteDetalle[]) {
+  return reportes.slice(0, 18).map((reporte) => {
+    const status = getReportStatus(reporte).toLowerCase();
+
+    return {
+      key: `${getReportCode(reporte)}-${getReportUuid(reporte)}`,
+      className:
+        status.includes('reject') || status.includes('nok')
+          ? 'bg-rose-500'
+          : 'bg-emerald-500',
+      label: status.includes('reject') || status.includes('nok') ? 'NOK' : 'PASS',
+    };
+  });
+}
+
+function getMtbfTrendBars(reportes: ActivoReporteDetalle[]) {
+  const timestamps = reportes
+    .map((reporte) => getReportTimestamp(reporte)?.getTime() ?? null)
+    .filter((timestamp): timestamp is number => typeof timestamp === 'number')
+    .sort((left, right) => left - right);
+
+  if (timestamps.length < 2) {
+    return [];
+  }
+
+  const deltas = timestamps.slice(1).map((timestamp, index) => timestamp - timestamps[index]);
+  const maxDelta = Math.max(...deltas);
+
+  return deltas.slice(-7).map((delta, index) => ({
+    key: `${delta}-${index}`,
+    height: Math.max(18, Math.round((delta / maxDelta) * 100)),
+  }));
+}
+
+function AcronymTooltip({ type }: { type: 'RUI' | 'WO' }) {
+  const description =
+    type === 'RUI'
+      ? 'Reporte Único de Inspección: Registro técnico inmutable del estado del activo'
+      : 'Work Order / Órden de Trabajo: Código maestro de mantenimiento programado';
+
+  return (
+    <span className="group relative inline-flex">
+      <span className="cursor-help underline decoration-dotted underline-offset-2">{type}</span>
+      <span
+        className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-[min(360px,80vw)] rounded-md border border-slate-700 bg-slate-950 p-3 text-left text-xs font-semibold leading-5 text-white shadow-xl group-hover:block"
+        role="tooltip"
+      >
+        {description}{' '}
+        <a
+          className="pointer-events-auto font-black text-emerald-300 underline decoration-emerald-300 underline-offset-4"
+          href="/docs/protocolos"
+        >
+          /docs/protocolos
+        </a>
+      </span>
+    </span>
+  );
+}
+
+function RecordCodeBadge({ code }: { code: string }) {
+  const normalizedCode = code.toUpperCase();
+  const acronym = normalizedCode.startsWith('RUI-')
+    ? 'RUI'
+    : normalizedCode.startsWith('WO-')
+      ? 'WO'
+      : null;
+
+  if (!acronym) {
+    return <span className="font-mono text-sm font-black text-slate-950">{code}</span>;
+  }
+
+  const suffix = code.slice(acronym.length);
+
+  return (
+    <span className="inline-flex w-fit items-center gap-0 font-mono font-bold text-xs text-indigo-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 shadow-sm">
+      <AcronymTooltip type={acronym} />
+      <span>{suffix}</span>
+    </span>
+  );
+}
+
+function AttachmentCounterBadge({ count }: { count: number }) {
+  if (count <= 0) {
+    return <span className="font-mono text-sm font-bold text-slate-400">—</span>;
+  }
+
+  return (
+    <span className="inline-flex w-fit rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-black text-slate-700 shadow-sm">
+      📎 {count} {count === 1 ? 'Adjunto' : 'Adjuntos'}
+    </span>
+  );
+}
+
+function MetricCluster({
+  calibrationProgress,
+  mtbfLabel,
+  statusBlocks,
+  trendBars,
+}: {
+  calibrationProgress: number;
+  mtbfLabel: string;
+  statusBlocks: Array<{ key: string; className: string; label: string }>;
+  trendBars: Array<{ key: string; height: number }>;
+}) {
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      <article className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Tiempo Medio Entre Fallas
+          </p>
+          <TrendingUp aria-hidden="true" className="h-5 w-5 shrink-0 text-indigo-600" />
+        </div>
+        <p className="mt-3 font-mono text-3xl font-black text-slate-950">{mtbfLabel}</p>
+        <div className="mt-4 flex h-8 items-end gap-1">
+          {trendBars.length > 0 ? (
+            trendBars.map((bar) => (
+              <span
+                className="w-full rounded-t bg-indigo-500/80"
+                key={bar.key}
+                style={{ height: `${bar.height}%` }}
+              />
+            ))
+          ) : (
+            <span className="font-mono text-sm font-bold text-slate-400">N/D</span>
+          )}
+        </div>
+      </article>
+
+      <article className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-black uppercase tracking-wide text-amber-800">
+            Ciclo de Vida de Calibracion
+          </p>
+          <Gauge aria-hidden="true" className="h-5 w-5 shrink-0 text-amber-700" />
+        </div>
+        <p className="mt-3 font-mono text-3xl font-black text-slate-950">
+          {calibrationProgress}%
+        </p>
+        <div className="mt-4 h-3 overflow-hidden rounded-full bg-white ring-1 ring-amber-200">
+          <div
+            className="h-full rounded-full bg-amber-500"
+            style={{ width: `${calibrationProgress}%` }}
+          />
+        </div>
+      </article>
+
+      <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Delta de Fallas Operacionales
+          </p>
+          <BarChart3 aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-700" />
+        </div>
+        <div className="mt-4 grid grid-cols-9 gap-1">
+          {statusBlocks.length > 0 ? (
+            statusBlocks.map((block) => (
+              <span
+                aria-label={block.label}
+                className={`h-8 rounded-sm ${block.className}`}
+                key={block.key}
+              />
+            ))
+          ) : (
+            <span className="col-span-9 font-mono text-sm font-bold text-slate-400">N/D</span>
+          )}
+        </div>
+      </article>
+    </div>
+  );
+}
+
 export default async function ActivoHvacDetallePage({
   params,
 }: ActivoHvacDetallePageProps) {
@@ -216,15 +468,27 @@ export default async function ActivoHvacDetallePage({
   const currentUserRole = data.seguridad.usuarioRole;
   const canRenderAdminPanel = isAdminProfile(currentUserRole);
   const canRenderSuperadminPanel = isSuperadminProfile(currentUserRole);
+  const operatorId = getOperatorToken(data.debug.usuarioEmail);
+  const auditFootprint = getAuditFootprint(resolvedParams.id, activo.uuid);
+  const mtbfLabel = calculateMtbfLabel(data.historial_mantenimientos);
+  const calibrationProgress = getCalibrationProgress(activo.last_maintenance_date);
+  const statusBlocks = getStatusDeltaBlocks(data.historial_mantenimientos);
+  const trendBars = getMtbfTrendBars(data.historial_mantenimientos);
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950">
+    <main className="min-h-screen bg-slate-100 text-slate-950">
       {process.env.NEXT_PUBLIC_SUPERADMIN_DEBUG === 'true' ? (
         <SuperadminDebugPanel payload={data} />
       ) : null}
 
-      <div className="mx-auto grid w-full max-w-7xl gap-5">
+      <div className="mx-auto grid w-full max-w-[98vw] gap-5 px-4 py-6 lg:px-6">
         <header className="grid gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap justify-end gap-2">
+            <HeaderMetadataBadge label="FORM_ID" value="FOR-PDAC-REV" />
+            <HeaderMetadataBadge label="OPERATOR_ID" value={operatorId} />
+            <HeaderMetadataBadge label="AUDIT_FOOTPRINT" value={auditFootprint} />
+          </div>
+
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-wide text-slate-500">
@@ -257,66 +521,43 @@ export default async function ActivoHvacDetallePage({
           </div>
         </header>
 
-        <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
-          <div className="grid gap-5">
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-                <Gauge aria-hidden="true" className="text-slate-700" size={20} />
-                <h2 className="text-base font-black text-slate-950">Ficha Tecnica</h2>
-              </div>
-
-              <dl className="mt-2">
-                <MetadataRow label="ID del Activo" value={activo.asset_code} />
-                <MetadataRow label="Descripcion" value={activo.asset_name} />
-                <MetadataRow label="Ubicacion" value={location || 'Ubicacion no disponible'} />
-                <MetadataRow label="Modelo" value={activo.model} />
-                <MetadataRow label="Numero de Serie" value={activo.serial_number} />
-                <MetadataRow label="Fabricante" value={activo.brand} />
-                <MetadataRow label="Tipo" value={activo.asset_type} />
-                <MetadataRow label="Area" value={activo.area} />
-                <MetadataRow label="Frecuencia de Mantenimiento" value={activo.maintenance_frequency} />
-              </dl>
-            </section>
-
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <h2 className="text-base font-black text-slate-950">Imagen del Activo</h2>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-slate-600">
-                  Maestro
-                </span>
-              </div>
-
-              <div className="mt-4 aspect-square max-h-[420px] overflow-hidden rounded-lg border border-dashed border-slate-400 bg-slate-50">
-                {activo.imagen_url ? (
-                  <div className="relative h-full w-full">
-                    <Image
-                      alt={`Imagen del activo ${activo.asset_code}`}
-                      className="object-cover"
-                      fill
-                      sizes="(min-width: 1280px) 680px, 90vw"
-                      src={activo.imagen_url}
-                      unoptimized
-                    />
-                  </div>
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500">
-                      <Camera aria-hidden="true" size={28} />
-                    </div>
-                    <p className="text-sm font-black text-slate-700">
-                      Cargar Imagen Maestra del Activo
-                    </p>
-                  </div>
-                )}
-              </div>
-            </section>
+        <section className="mx-auto grid w-full max-w-[98vw] grid-cols-1 items-start gap-6 lg:grid-cols-12">
+          <div className="lg:col-span-3">
+            <AssetImageDialog assetCode={activo.asset_code} imageUrl={activo.imagen_url} />
           </div>
 
-          <aside className="grid content-start gap-4">
-            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-lg border border-slate-200 border-t-4 border-t-indigo-600 bg-white p-5 shadow-sm lg:col-span-6">
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+              <Gauge aria-hidden="true" className="text-indigo-700" size={20} />
+              <h2 className="text-base font-black text-slate-950">Ficha Tecnica</h2>
+              <SectionInfoTooltip
+                label="Ficha Tecnica"
+                message="Muestra los datos maestros de ingeniería y diseño validados para el equipo en planta."
+              />
+            </div>
+
+            <dl className="mt-2 grid gap-x-6 md:grid-cols-2 xl:grid-cols-3">
+              <MetadataRow label="ID del Activo" value={activo.asset_code} />
+              <MetadataRow label="Descripcion" value={activo.asset_name} />
+              <MetadataRow label="Ubicacion" value={location || 'Ubicacion no disponible'} />
+              <MetadataRow label="Modelo" value={activo.model} />
+              <MetadataRow label="Numero de Serie" value={activo.serial_number} />
+              <MetadataRow label="Fabricante" value={activo.brand} />
+              <MetadataRow label="Tipo" value={activo.asset_type} />
+              <MetadataRow label="Area" value={activo.area} />
+              <MetadataRow label="Frecuencia de Mantenimiento" value={activo.maintenance_frequency} />
+            </dl>
+          </section>
+
+          <aside className="grid content-start gap-4 lg:col-span-3">
+            <section className="rounded-lg border border-slate-200 border-t-4 border-t-amber-500 bg-white p-4 shadow-sm">
               <div className="flex items-center gap-2">
-                <CheckCircle2 aria-hidden="true" className="text-slate-600" size={18} />
+                <CheckCircle2 aria-hidden="true" className="text-amber-700" size={18} />
                 <h2 className="text-sm font-black text-slate-950">Perfil Regular (Solo Lectura)</h2>
+                <SectionInfoTooltip
+                  label="Perfil Regular"
+                  message="Parámetros operativos de solo lectura para el control de flujos y umbrales GxP."
+                />
               </div>
               <div className="mt-4 grid gap-3">
                 <DisabledSpecInput label="Pressure Setpoint" value="N/A - pendiente SCADA" />
@@ -333,34 +574,51 @@ export default async function ActivoHvacDetallePage({
           </aside>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-md">
           <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+              <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
+                <Activity aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-700" />
                 Historial Inmutable de Cambios del Activo
+                <SectionInfoTooltip
+                  label="Historial Inmutable"
+                  message="Registro cronológico inalterable (Audit Trail) de las órdenes de trabajo (WO) y reportes de inspección (RUI) ejecutados."
+                />
               </p>
               <h2 className="mt-1 text-xl font-black text-slate-950">
                 Registros de mantenimiento y evidencias
               </h2>
             </div>
-            <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
-              {data.historial_mantenimientos.length} RUI asociado(s)
-            </span>
+            <div className="flex flex-wrap gap-2 md:justify-end">
+              <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
+                {data.historial_mantenimientos.length} RUI asociado(s)
+              </span>
+              <span className="inline-flex w-fit rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-800">
+                {data.debug.auditTrailEventos} evento(s) audit_trail
+              </span>
+            </div>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 grid gap-4">
+            <MetricCluster
+              calibrationProgress={calibrationProgress}
+              mtbfLabel={mtbfLabel}
+              statusBlocks={statusBlocks}
+              trendBars={trendBars}
+            />
+
             {data.historial_mantenimientos.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-sm font-semibold text-slate-600">
                 No existen reportes RUI asociados a este activo.
               </div>
             ) : (
               <div className="overflow-hidden rounded-lg border border-slate-200">
-                <div className="hidden grid-cols-[1fr_120px_1fr_1fr_1.5fr_130px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-black uppercase tracking-wide text-slate-500 xl:grid">
+                <div className="hidden grid-cols-[1fr_130px_1.25fr_1fr_150px_130px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-black uppercase tracking-wide text-slate-500 xl:grid">
                   <span>Timestamp (UTC)</span>
                   <span>Action Badge</span>
-                  <span>Record Code</span>
+                  <span>RUI / WO Dominante</span>
                   <span>Status Pill</span>
-                  <span>Multimedia Evidence Strip</span>
+                  <span>Adjuntos</span>
                   <span className="text-right">Action Button</span>
                 </div>
 
@@ -374,7 +632,7 @@ export default async function ActivoHvacDetallePage({
 
                     return (
                       <div
-                        className="grid gap-3 bg-white px-4 py-4 xl:grid-cols-[1fr_120px_1fr_1fr_1.5fr_130px] xl:items-center"
+                        className="grid gap-3 bg-white px-4 py-4 xl:grid-cols-[1fr_130px_1.25fr_1fr_150px_130px] xl:items-center"
                         key={`${reportCode}-${reportUuid}`}
                       >
                         <div>
@@ -399,18 +657,19 @@ export default async function ActivoHvacDetallePage({
 
                         <div className="min-w-0">
                           <p className="text-[11px] font-black uppercase tracking-wide text-slate-500 xl:hidden">
-                            Record Code
+                            RUI / WO Dominante
                           </p>
                           <div className="mt-1 flex min-w-0 items-center gap-2 xl:mt-0">
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white">
                               <FileText aria-hidden="true" size={16} />
                             </div>
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-black text-slate-950">
-                                {reportCode}
-                              </p>
+                              <RecordCodeBadge code={reportCode} />
                               <p className="truncate font-mono text-xs text-slate-500">
                                 {reportUuid}
+                              </p>
+                              <p className="font-mono text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                                AUDIT_TRAIL:{rui.audit_trail_event_count}
                               </p>
                             </div>
                           </div>
@@ -428,16 +687,12 @@ export default async function ActivoHvacDetallePage({
                         </div>
 
                         <div className="min-w-0">
-                          <div className="mb-2 flex items-center gap-2 xl:hidden">
-                            <ImageIcon aria-hidden="true" className="text-slate-500" size={16} />
-                            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
-                              Multimedia Evidence Strip ({rui.imagenes_evidencia.length})
-                            </p>
+                          <p className="text-[11px] font-black uppercase tracking-wide text-slate-500 xl:hidden">
+                            Adjuntos
+                          </p>
+                          <div className="mt-1 xl:mt-0">
+                            <AttachmentCounterBadge count={rui.imagenes_evidencia.length} />
                           </div>
-                          <EvidencePreviewGallery
-                            images={rui.imagenes_evidencia}
-                            reportLabel={reportCode}
-                          />
                         </div>
 
                         <div className="flex justify-start xl:justify-end">

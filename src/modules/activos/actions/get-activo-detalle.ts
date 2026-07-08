@@ -49,6 +49,7 @@ type MantenimientoRegistroRow = {
 type FormularioRespuestaEvidenciaRow = {
   mantenimiento_id: number | null;
   campo_id: number | null;
+  valor_seleccion: string | null;
   valor_texto: string | null;
   formularios_campos:
     | {
@@ -66,6 +67,10 @@ type FormularioRespuestaEvidenciaRow = {
     | null;
 };
 
+type AuditTrailEntityRow = {
+  entity_uuid: string | null;
+};
+
 type UsuarioPerfilRow = {
   user_email: string | null;
   role: string | null;
@@ -73,6 +78,7 @@ type UsuarioPerfilRow = {
 };
 
 export type ActivoReporteDetalle = MantenimientoRegistroRow & {
+  audit_trail_event_count: number;
   reporte_id: string;
   imagenes_evidencia: string[];
 };
@@ -90,6 +96,7 @@ export type ActivoDetallePayload = {
     activoId: string;
     usuarioEmail: string | null;
     assetCode: string | null;
+    auditTrailEventos: number;
     reportesEncontrados: number;
     evidenciasEncontradas: number;
   };
@@ -101,6 +108,8 @@ const ACTIVO_SELECT =
   'id, uuid, asset_code, asset_name, asset_type, site, area, location_detail, brand, model, serial_number, capacity, capacity_unit, installation_date, status, maintenance_frequency, last_maintenance_date, next_maintenance_date, internal_responsible, technical_provider';
 const MANTENIMIENTO_SELECT =
   'id, uuid, record_code, asset_code, template_code, assigned_technician, scheduled_date, executed_at, status, notes, supervisor_signed_by, supervisor_signed_at, quality_signed_by, quality_signed_at, rejection_comments';
+const EVIDENCE_BUCKET = 'evidencias-mantenimiento';
+const VIRTUAL_EVIDENCE_FIELD_KEY = 'evidencias_hvac';
 
 function normalizeEmail(value: string | null | undefined) {
   return String(value ?? '').trim().toLowerCase();
@@ -120,60 +129,93 @@ function isPrivilegedAssetProfileOperator(profile: UsuarioPerfilRow | null) {
   );
 }
 
-function parseEvidenceString(value: string | null) {
+function isNonApplicableEvidenceValue(value: string | null | undefined) {
+  const normalizedValue = String(value ?? '').trim().toLowerCase();
+
+  return ['n/a', 'na', 'no aplica', 'sin evidencia', 'sin evidencias'].includes(normalizedValue);
+}
+
+function collectEvidenceValues(value: unknown): string[] {
   if (!value) {
+    return [];
+  }
+
+  if (typeof value === 'string') {
+    const trimmedValue = value.trim();
+
+    if (!trimmedValue || isNonApplicableEvidenceValue(trimmedValue)) {
+      return [];
+    }
+
+    return [trimmedValue];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectEvidenceValues(item));
+  }
+
+  if (typeof value === 'object') {
+    const candidate = value as Record<string, unknown>;
+    const directValue =
+      candidate.publicUrl ??
+      candidate.public_url ??
+      candidate.url ??
+      candidate.path ??
+      candidate.storagePath ??
+      candidate.storage_path;
+
+    return [
+      ...collectEvidenceValues(directValue),
+      ...collectEvidenceValues(candidate.images),
+      ...collectEvidenceValues(candidate.imagenes),
+      ...collectEvidenceValues(candidate.photos),
+      ...collectEvidenceValues(candidate.evidence),
+      ...collectEvidenceValues(candidate.evidencias),
+      ...collectEvidenceValues(candidate.attachments),
+      ...collectEvidenceValues(candidate.adjuntos),
+      ...collectEvidenceValues(candidate.files),
+    ];
+  }
+
+  return [];
+}
+
+function parseEvidenceString(value: string | null) {
+  if (!value || isNonApplicableEvidenceValue(value)) {
     return [];
   }
 
   const trimmedValue = value.trim();
 
-  if (!trimmedValue) {
-    return [];
-  }
-
   try {
     const parsedValue = JSON.parse(trimmedValue) as unknown;
-
-    if (Array.isArray(parsedValue)) {
-      return parsedValue
-        .flatMap((item) => {
-          if (typeof item === 'string') {
-            return [item];
-          }
-
-          if (item && typeof item === 'object') {
-            const candidate = item as Record<string, unknown>;
-            const path =
-              candidate.publicUrl ??
-              candidate.path ??
-              candidate.storagePath ??
-              candidate.storage_path ??
-              candidate.url;
-
-            return typeof path === 'string' ? [path] : [];
-          }
-
-          return [];
-        })
-        .filter(Boolean);
-    }
-
-    if (parsedValue && typeof parsedValue === 'object') {
-      const candidate = parsedValue as Record<string, unknown>;
-      const path =
-        candidate.publicUrl ??
-        candidate.path ??
-        candidate.storagePath ??
-        candidate.storage_path ??
-        candidate.url;
-
-      return typeof path === 'string' ? [path] : [];
-    }
+    return collectEvidenceValues(parsedValue);
   } catch {
     // valor_texto puede almacenar una ruta plana cuando solo existe una evidencia.
   }
 
-  return [trimmedValue];
+  return collectEvidenceValues(trimmedValue);
+}
+
+function normalizeEvidenceUrl(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue || isNonApplicableEvidenceValue(trimmedValue)) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(trimmedValue)) {
+    return trimmedValue;
+  }
+
+  const publicStorageMarker = `/storage/v1/object/public/${EVIDENCE_BUCKET}/`;
+  const markerIndex = trimmedValue.indexOf(publicStorageMarker);
+  const path =
+    markerIndex >= 0
+      ? trimmedValue.slice(markerIndex + publicStorageMarker.length)
+      : trimmedValue.replace(new RegExp(`^${EVIDENCE_BUCKET}/`), '');
+
+  return publicSupabase.storage.from(EVIDENCE_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
 function isEvidenceField(row: FormularioRespuestaEvidenciaRow) {
@@ -181,15 +223,22 @@ function isEvidenceField(row: FormularioRespuestaEvidenciaRow) {
     ? row.formularios_campos[0]
     : row.formularios_campos;
   const fieldType = String(fieldMeta?.field_type ?? '').trim().toLowerCase();
-  const textValue = String(row.valor_texto ?? '').trim();
+  const fieldKey = String(fieldMeta?.field_key ?? '').trim().toLowerCase();
+  const serializedValue = `${row.valor_texto ?? ''} ${row.valor_seleccion ?? ''}`;
 
   return (
     fieldMeta?.evidence_required === true ||
-    ['evidence', 'file', 'image', 'attachment'].includes(fieldType) ||
-    textValue.includes('"publicUrl"') ||
-    textValue.includes('"path"') ||
-    textValue.includes('/storage/v1/object/') ||
-    textValue.includes('evidencias/')
+    fieldKey === VIRTUAL_EVIDENCE_FIELD_KEY ||
+    fieldKey.includes('evidencia') ||
+    ['evidence', 'file', 'image', 'photo', 'attachment'].includes(fieldType) ||
+    serializedValue.includes('"publicUrl"') ||
+    serializedValue.includes('"public_url"') ||
+    serializedValue.includes('"images"') ||
+    serializedValue.includes('"attachments"') ||
+    serializedValue.includes('"path"') ||
+    serializedValue.includes('/storage/v1/object/') ||
+    serializedValue.includes(EVIDENCE_BUCKET) ||
+    serializedValue.includes('evidencias/')
   );
 }
 
@@ -300,7 +349,7 @@ async function fetchEvidenceByMaintenanceIds(
   const { data, error } = await supabase
     .from('formularios_respuestas')
     .select(
-      'mantenimiento_id, campo_id, valor_texto, formularios_campos!formularios_respuestas_campo_id_fkey(field_key, field_label, field_type, evidence_required)',
+      'mantenimiento_id, campo_id, valor_texto, valor_seleccion, formularios_campos!formularios_respuestas_campo_id_fkey(field_key, field_label, field_type, evidence_required)',
     )
     .in('mantenimiento_id', mantenimientoIds);
 
@@ -323,13 +372,57 @@ async function fetchEvidenceByMaintenanceIds(
       }
 
       const currentImages = respuestasPorMantenimiento.get(respuesta.mantenimiento_id) ?? [];
-      respuestasPorMantenimiento.set(respuesta.mantenimiento_id, [
-        ...currentImages,
+      const evidenceUrls = [
         ...parseEvidenceString(respuesta.valor_texto),
+        ...parseEvidenceString(respuesta.valor_seleccion),
+      ]
+        .map((value) => normalizeEvidenceUrl(value))
+        .filter((value): value is string => Boolean(value));
+
+      respuestasPorMantenimiento.set(respuesta.mantenimiento_id, [
+        ...new Set([...currentImages, ...evidenceUrls]),
       ]);
     });
 
   return respuestasPorMantenimiento;
+}
+
+async function fetchAuditTrailCountsByEntityUuids(
+  supabase: SupabaseServerClient,
+  entityUuids: string[],
+) {
+  const countsByUuid = new Map<string, number>();
+
+  if (entityUuids.length === 0) {
+    return countsByUuid;
+  }
+
+  const { data, error } = await supabase
+    .from('audit_trail')
+    .select('entity_uuid')
+    .eq('entity', 'mantenimientos_registros')
+    .in('entity_uuid', entityUuids);
+
+  if (error) {
+    console.error('[DATA INTEGRITY CHECK] Error consultando audit_trail por entity_uuid', {
+      entityUuids,
+      code: error.code,
+      message: error.message,
+      hint: error.hint,
+    });
+
+    return countsByUuid;
+  }
+
+  ((data ?? []) as AuditTrailEntityRow[]).forEach((row) => {
+    if (!row.entity_uuid) {
+      return;
+    }
+
+    countsByUuid.set(row.entity_uuid, (countsByUuid.get(row.entity_uuid) ?? 0) + 1);
+  });
+
+  return countsByUuid;
 }
 
 export async function getActivoDetalle(activoId: string): Promise<ActivoDetallePayload> {
@@ -383,6 +476,7 @@ export async function getActivoDetalle(activoId: string): Promise<ActivoDetalleP
         activoId,
         usuarioEmail: usuarioEmail || null,
         assetCode: null,
+        auditTrailEventos: 0,
         reportesEncontrados: 0,
         evidenciasEncontradas: 0,
       },
@@ -395,8 +489,13 @@ export async function getActivoDetalle(activoId: string): Promise<ActivoDetalleP
     supabase,
     mantenimientoIds,
   );
+  const auditTrailCountsByUuid = await fetchAuditTrailCountsByEntityUuids(
+    supabase,
+    mantenimientos.map((mantenimiento) => mantenimiento.uuid),
+  );
   const historialMantenimientos = mantenimientos.map((mantenimiento) => ({
     ...mantenimiento,
+    audit_trail_event_count: auditTrailCountsByUuid.get(mantenimiento.uuid) ?? 0,
     reporte_id: mantenimiento.uuid,
     imagenes_evidencia: respuestasPorMantenimiento.get(mantenimiento.id) ?? [],
   }));
@@ -414,6 +513,10 @@ export async function getActivoDetalle(activoId: string): Promise<ActivoDetalleP
       activoId,
       usuarioEmail: usuarioEmail || null,
       assetCode: activo.asset_code,
+      auditTrailEventos: historialMantenimientos.reduce(
+        (total, reporte) => total + reporte.audit_trail_event_count,
+        0,
+      ),
       reportesEncontrados: historialMantenimientos.length,
       evidenciasEncontradas: historialMantenimientos.reduce(
         (total, reporte) => total + reporte.imagenes_evidencia.length,

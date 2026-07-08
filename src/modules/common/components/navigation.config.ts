@@ -107,7 +107,7 @@ export const NAVIGATION_TREE: NavigationNode[] = [
         roles: ALL_NAVIGATION_ROLES,
       },
       {
-        title: 'Buscador de Expedientes PDAC',
+        title: 'Buscador de Expedientes PDAC (Regulado)',
         href: APP_ROUTES.activos.hvacProfileSearch,
         icon: 'Activity',
         roles: ALL_NAVIGATION_ROLES,
