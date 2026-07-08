@@ -235,7 +235,7 @@ export function AppShell({
     <div className="min-h-screen overflow-x-hidden bg-slate-50">
       <div
         className={`hidden shrink-0 print:hidden md:fixed md:inset-y-0 md:left-0 md:block transition-[width] duration-300 ${
-          isSidebarCollapsed ? 'md:w-16 md:min-w-16' : 'md:w-64 md:min-w-[16rem]'
+          isSidebarCollapsed ? 'md:w-16 md:min-w-16' : 'md:w-[280px] md:min-w-[280px]'
         }`}
       >
         <Sidebar
@@ -269,12 +269,12 @@ export function AppShell({
 
       <div
         className={`min-h-screen min-w-0 overflow-x-hidden transition-[padding] duration-300 print:pl-0 ${
-          isSidebarCollapsed ? 'md:pl-16' : 'md:pl-64'
+          isSidebarCollapsed ? 'md:pl-16' : 'md:pl-[280px]'
         }`}
       >
         <header
           className={`fixed left-0 right-0 top-0 z-50 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-md transition-[left] duration-300 print:hidden ${
-            isSidebarCollapsed ? 'md:left-16' : 'md:left-64'
+            isSidebarCollapsed ? 'md:left-16' : 'md:left-[280px]'
           }`}
         >
           <div className="flex min-w-0 items-center gap-3">

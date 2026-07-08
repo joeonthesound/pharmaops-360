@@ -134,7 +134,7 @@ export function Sidebar({
   onToggleCollapsed,
   showCollapseToggle = false,
 }: SidebarProps) {
-  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean | undefined>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const pathname = usePathname();
   const activePath = pathname || currentPath;
@@ -145,10 +145,10 @@ export function Sidebar({
     [capabilities, currentRole],
   );
 
-  function toggleMenu(title: string) {
+  function toggleMenu(menuKey: string, fallbackOpen: boolean) {
     setOpenMenus((current) => ({
       ...current,
-      [title]: !current[title],
+      [menuKey]: !(current[menuKey] ?? fallbackOpen),
     }));
   }
 
@@ -221,11 +221,13 @@ export function Sidebar({
     );
   }
 
-  function renderNode(node: NavigationNode, depth = 0) {
+  function renderNode(node: NavigationNode, depth = 0, parentKey = 'root') {
+    const nodeKey = `${parentKey}/${node.title}:${node.href ?? 'section'}`;
+    const childrenId = `sidebar-children-${nodeKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
     const hasChildren = Boolean(node.children?.length);
     const hasActiveChild = hasActiveDescendant(node);
-    const isOpen =
-      !isDashboardActive && (Boolean(openMenus[node.title]) || isNodeRouteOpen(node) || hasActiveChild);
+    const shouldOpenFromRoute = !isDashboardActive && (isNodeRouteOpen(node) || hasActiveChild);
+    const isOpen = openMenus[nodeKey] ?? shouldOpenFromRoute;
     const isActive = isNodeActive(node);
     const isMaintenanceRoute = activePath.startsWith('/mantenimiento');
     const isMaintenanceTreeNode = isMaintenanceRoute && isMaintenanceNode(node);
@@ -239,15 +241,9 @@ export function Sidebar({
       isMaintenanceActive || isActivosActive ? MAINTENANCE_ACTIVE_CLASS : theme.itemActive;
     const activeTextClass = isMaintenanceActive || isActivosActive ? 'text-white' : theme.text;
     const iconClass = isMaintenanceActive || isActivosActive ? 'text-white' : theme.mutedText;
-    const paddingClass = isCollapsed
-      ? 'px-2'
-      : depth === 0
-        ? 'px-3'
-        : depth === 1
-          ? 'pl-6 pr-3'
-          : 'pl-10 pr-3';
+    const paddingClass = isCollapsed ? 'px-2' : 'px-4';
     const justifyClass = isCollapsed ? 'justify-center' : 'justify-between';
-    const itemClass = `${paddingClass} flex min-h-11 w-full items-center ${justifyClass} rounded-md py-2 text-left text-sm font-semibold transition ${activeTextClass} ${
+    const itemClass = `${paddingClass} flex min-h-12 w-full items-center ${justifyClass} rounded-md py-3 text-left text-sm font-semibold transition ${activeTextClass} ${
       isActive || isMaintenanceActive || isActivosActive ? activeClass : theme.item
     }`;
     const contentClass = `flex min-w-0 flex-1 items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`;
@@ -255,45 +251,37 @@ export function Sidebar({
 
     if (hasChildren) {
       return (
-        <div key={node.title} title={isCollapsed ? node.title : undefined}>
-          <div className={itemClass}>
-            {node.href ? (
-              <Link className={contentClass} href={node.href}>
-                <NavigationIcon className={iconClass} name={node.icon} />
-                <span className={labelClass}>{node.title}</span>
-              </Link>
-            ) : (
-              <button
-                className={`${contentClass} text-left`}
-                onClick={() => toggleMenu(node.title)}
-                type="button"
-              >
-                <NavigationIcon className={iconClass} name={node.icon} />
-                <span className={labelClass}>{node.title}</span>
-              </button>
-            )}
+        <div key={nodeKey} title={isCollapsed ? node.title : undefined}>
+          <button
+            aria-controls={childrenId}
+            aria-expanded={isOpen}
+            aria-label={`Alternar ${node.title}`}
+            className={itemClass}
+            onClick={() => toggleMenu(nodeKey, shouldOpenFromRoute)}
+            type="button"
+          >
+            <span className={contentClass}>
+              <NavigationIcon className={iconClass} name={node.icon} />
+              <span className={labelClass}>{node.title}</span>
+            </span>
             {!isCollapsed ? (
-              <button
-                aria-label={`Alternar ${node.title}`}
-                className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-white/10"
-                onClick={() => toggleMenu(node.title)}
-                type="button"
-              >
+              <span className="ml-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition hover:bg-white/10">
                 <ChevronDown
                   aria-hidden="true"
-                  className={`transition ${iconClass} ${isOpen ? 'rotate-180' : ''}`}
-                  size={16}
+                  className={`transition-transform ${iconClass} ${isOpen ? 'rotate-180' : ''}`}
+                  size={18}
                 />
-              </button>
+              </span>
             ) : null}
-          </div>
+          </button>
           {isOpen ? (
             <div
-              className={`mt-1 grid gap-1 ${
-                isCollapsed ? '' : 'ml-4 border-l border-slate-700/50 pl-2'
+              className={`mt-1.5 grid gap-1.5 ${
+                isCollapsed ? '' : 'ml-5 border-l border-slate-700/50 pl-3'
               }`}
+              id={childrenId}
             >
-              {node.children?.map((child) => renderNode(child, depth + 1))}
+              {node.children?.map((child) => renderNode(child, depth + 1, nodeKey))}
             </div>
           ) : null}
         </div>
@@ -310,7 +298,7 @@ export function Sidebar({
       return (
         <div
           className={`${itemClass} cursor-not-allowed opacity-60`}
-          key={node.title}
+          key={nodeKey}
           title={isCollapsed ? node.title : undefined}
         >
           <span className={contentClass}>
@@ -325,7 +313,7 @@ export function Sidebar({
       <Link
         className={itemClass}
         href={resolvedHref}
-        key={node.title}
+        key={nodeKey}
         title={isCollapsed ? node.title : undefined}
       >
         <span className={contentClass}>
@@ -339,7 +327,7 @@ export function Sidebar({
   return (
     <aside
       className={`flex min-h-screen w-full shrink-0 flex-col overflow-x-hidden border-r ${
-        isCollapsed ? 'min-w-16' : 'min-w-[16rem]'
+        isCollapsed ? 'min-w-16' : 'min-w-[280px]'
       } ${theme.border} ${theme.shell}`}
     >
       <div className={`border-b border-white/10 ${isCollapsed ? 'p-3' : 'p-4'}`}>
@@ -374,13 +362,13 @@ export function Sidebar({
         </label>
       </div>
 
-      <nav className={`grid gap-2 ${isCollapsed ? 'p-2' : 'p-3'}`}>
+      <nav className={`grid gap-2 ${isCollapsed ? 'p-2' : 'p-4'}`}>
         {navigation.map((node) => renderNode(node))}
       </nav>
 
       <form action={signOutAction} className="mt-auto border-t border-white/10 p-3">
         <button
-          className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition ${theme.text} ${theme.item}`}
+          className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold transition ${theme.text} ${theme.item}`}
           title={isCollapsed ? 'Cerrar Sesión' : undefined}
           type="submit"
         >
@@ -393,7 +381,7 @@ export function Sidebar({
         <div className="hidden border-t border-white/10 p-3 md:block">
           <button
             aria-label={isCollapsed ? 'Expandir navegación' : 'Colapsar navegación'}
-            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
             onClick={onToggleCollapsed}
             type="button"
           >
