@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { Activo } from '@/modules/activos/activos.interface';
+import { EmptyTabState } from './empty-tab-state';
 
 type ActivoConUuid = Activo & {
   uuid: string;
@@ -232,11 +233,18 @@ export function TechnicalHistoryGrid({
       </div>
 
       {paginatedOrders.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700 shadow-sm">
-          {roleScope === 'technician' && orders.length === 0
-            ? 'No hay registros de mantenimiento asignados o creados bajo este perfil.'
-            : 'No hay registros que coincidan con los filtros aplicados.'}
-        </div>
+        <EmptyTabState
+          description={
+            roleScope === 'technician' && orders.length === 0
+              ? 'No hay registros de mantenimiento asignados o creados bajo este perfil operativo.'
+              : 'Ajusta la busqueda integral GxP o el ordenamiento para revisar otros registros aprobados.'
+          }
+          title={
+            roleScope === 'technician' && orders.length === 0
+              ? 'No hay historial tecnico asignado'
+              : 'No hay registros que coincidan con los filtros aplicados'
+          }
+        />
       ) : (
         <div className="grid gap-3">
           {paginatedOrders.map((registro) => {

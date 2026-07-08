@@ -1,6 +1,7 @@
 ﻿import Link from 'next/link';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import type { Activo, ActivoEstado } from '@/modules/activos/activos.interface';
+import { EmptyTabState } from './empty-tab-state';
 import { GridRefreshOnMount } from './grid-refresh-on-mount';
 import { TechnicalHistoryGrid } from './technical-history-grid';
 
@@ -67,6 +68,11 @@ type DashboardOrder = MantenimientoRegistro & {
   activos: ActivoConUuid | ActivoConUuid[] | null;
 };
 
+type CountableDashboardOrder = Pick<
+  MantenimientoRegistro,
+  'assigned_technician' | 'management_signed_at' | 'management_signed_by' | 'status'
+>;
+
 const estadoClasses: Record<ActivoEstado, string> = {
   Operativo: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   'En mantenimiento': 'border-amber-200 bg-amber-50 text-amber-800',
@@ -124,6 +130,13 @@ const tabs: Array<{ href: string; label: string; value: DashboardView }> = [
     value: 'history',
   },
 ];
+
+const defaultTabCounts: Record<DashboardView, number> = {
+  pending: 0,
+  sent: 0,
+  rejected: 0,
+  history: 0,
+};
 
 const SENT_STATUSES: Array<MantenimientoRegistro['status']> = [
   'PENDING_SUPERVISOR',
@@ -229,6 +242,67 @@ function isStatusInList(
   return statusList.some(
     (allowedStatus) => normalizeMaintenanceStatus(allowedStatus) === canonicalStatus,
   );
+}
+
+function isOrderInRoleScope(
+  order: Pick<MantenimientoRegistro, 'assigned_technician'>,
+  roleScope: DashboardRoleScope,
+  technicianEmail: string | null,
+) {
+  if (roleScope !== 'technician') {
+    return true;
+  }
+
+  return String(order.assigned_technician ?? '').trim().toLowerCase() === technicianEmail;
+}
+
+function isClosedByManagement(
+  order: Pick<MantenimientoRegistro, 'management_signed_at' | 'management_signed_by'>,
+) {
+  return order.management_signed_by !== null || order.management_signed_at !== null;
+}
+
+function shouldRenderOrderInOperationalGrid(
+  order: Pick<MantenimientoRegistro, 'management_signed_at' | 'management_signed_by' | 'status'>,
+  view: DashboardView,
+) {
+  const trueCanonicalStatus = isClosedByManagement(order) ? 'CLOSED' : order.status;
+
+  return !((view === 'pending' || view === 'sent') && trueCanonicalStatus === 'CLOSED');
+}
+
+function resolveTabCounts(
+  orders: CountableDashboardOrder[],
+  roleScope: DashboardRoleScope,
+  technicianEmail: string | null,
+) {
+  return orders.reduce<Record<DashboardView, number>>((counts, order) => {
+    if (!isOrderInRoleScope(order, roleScope, technicianEmail)) {
+      return counts;
+    }
+
+    counts.history += 1;
+
+    if (
+      isStatusInList(order.status, resolvePendingStatusesForRole(roleScope)) &&
+      shouldRenderOrderInOperationalGrid(order, 'pending')
+    ) {
+      counts.pending += 1;
+    }
+
+    if (
+      isStatusInList(order.status, SENT_STATUSES) &&
+      shouldRenderOrderInOperationalGrid(order, 'sent')
+    ) {
+      counts.sent += 1;
+    }
+
+    if (isStatusInList(order.status, REJECTED_STATUSES)) {
+      counts.rejected += 1;
+    }
+
+    return counts;
+  }, { ...defaultTabCounts });
 }
 
 function isGlobalDashboardRole(role: string | null | undefined) {
@@ -617,6 +691,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   let queryError: { code?: string; message?: string } | null = null;
   let absoluteTotalCount = 0;
   let allRecordsByStatus: Record<string, number> = {};
+  let tabCounts: Record<DashboardView, number> = { ...defaultTabCounts };
 
   if (isSuperadminDebugEnabled) {
     console.log('[DIAGNOSTICO DASHBOARD P360] ETAPA 1 [Llamada a Ordenes Activas]', {
@@ -645,7 +720,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     const [{ data: rawOrders }, { count: absoluteTotal }] = await Promise.all([
       supabase
         .from('mantenimientos_registros')
-        .select('id, status, asset_code'),
+        .select('id, status, asset_code, assigned_technician, management_signed_by, management_signed_at'),
       supabase
         .from('mantenimientos_registros')
         .select('*', { count: 'exact', head: true }),
@@ -657,6 +732,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       accumulator[statusKey] = (accumulator[statusKey] ?? 0) + 1;
       return accumulator;
     }, {});
+    tabCounts = resolveTabCounts((rawOrders ?? []) as CountableDashboardOrder[], roleScope, technicianEmail);
 
     if (isSuperadminDebugEnabled) {
       console.log('[DEBUG RLS ISOLATION] Raw orders without asset join:', rawOrders?.length || 0);
@@ -757,6 +833,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const historyOrders = dashboardOrders;
   const visibleOrders = dashboardOrders;
+  const displayOrders =
+    currentView === 'history'
+      ? visibleOrders
+      : visibleOrders.filter((registro) => shouldRenderOrderInOperationalGrid(registro, currentView));
 
   console.log('==========================================================================');
   console.log(
@@ -830,10 +910,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <nav className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:grid-cols-4">
           {tabs.map((tab) => {
             const isActive = currentView === tab.value;
+            const count = tabCounts[tab.value];
 
             return (
               <Link
-                className={`flex min-h-11 items-center justify-center rounded-md px-3 text-center text-sm font-semibold transition ${
+                className={`flex min-h-11 items-center justify-center gap-2 rounded-md px-3 text-center text-sm font-semibold transition ${
                   isActive
                     ? 'bg-slate-900 text-white'
                     : 'bg-white text-slate-700 hover:bg-slate-100'
@@ -841,7 +922,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 href={tab.href}
                 key={tab.value}
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                <span
+                  className={`inline-flex min-w-7 shrink-0 items-center justify-center rounded-full px-2 py-0.5 text-xs font-black ${
+                    isActive ? 'bg-white text-slate-950' : 'bg-slate-900 text-white'
+                  }`}
+                >
+                  {count}
+                </span>
               </Link>
             );
           })}
@@ -853,10 +941,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         ) : null}
 
-        {!queryError && currentView !== 'history' && visibleOrders.length === 0 ? (
-          <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700 shadow-sm">
-            No hay ordenes en esta pestana segun el estado transaccional actual.
-          </div>
+        {!queryError && currentView !== 'history' && displayOrders.length === 0 ? (
+          <EmptyTabState />
         ) : null}
 
         {!queryError && currentView === 'history' ? (
@@ -869,17 +955,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
         {!queryError && currentView !== 'history' ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {visibleOrders.map((registro) => {
-              const isFullySigned =
-                registro.management_signed_by !== null || registro.management_signed_at !== null;
+            {displayOrders.map((registro) => {
+              const isFullySigned = isClosedByManagement(registro);
               const trueCanonicalStatus = isFullySigned ? 'CLOSED' : registro.status;
-
-              if (
-                (currentView === 'pending' || currentView === 'sent') &&
-                trueCanonicalStatus === 'CLOSED'
-              ) {
-                return null;
-              }
 
               const activo = resolveRelatedAsset(registro);
               const displayAssetCode =
