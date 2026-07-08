@@ -187,3 +187,5 @@ Nota: estos nodos aun no tienen `rolesAllowed` o `requiredCapabilities` definido
 - [Usuarios y roles](./docs/wiki/09-usuarios-roles.md)
 - [SuperAdmin D10S](./docs/wiki/13-superadmin-d10s-cabina-control.md)
 - [Portal auditor](./docs/wiki/14-portal-auditor-copias-controladas.md)
+
+"Release v1.1.0: Refactorización estructural de PDAC y control GxP"

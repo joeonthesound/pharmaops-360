@@ -29,7 +29,6 @@ type ActivoHvacDetallePageProps = {
 };
 
 type LifecycleState = {
-  slug: 'activo' | 'enviado' | 'rechazado' | 'ht';
   label: string;
   className: string;
 };
@@ -39,33 +38,24 @@ type ActionBadge = {
   className: string;
 };
 
-const lifecycleByStatus: Record<string, LifecycleState> = {
-  draft: {
-    slug: 'activo',
-    label: 'Documento Activo',
-    className: 'border-slate-200 bg-slate-100 text-slate-700',
+const GXP_STATUS_BADGES = {
+  technician: {
+    label: 'FIRMADO - TÉCNICO',
+    className: 'border-slate-700 bg-slate-900 text-white shadow-sm',
   },
-  pending_supervisor: {
-    slug: 'enviado',
-    label: 'Enviado a Supervisor',
-    className: 'border-amber-200 bg-amber-50 text-amber-800',
+  supervisor: {
+    label: 'REVISADO - SUPERVISOR',
+    className: 'border-indigo-700 bg-indigo-700 text-white shadow-sm',
   },
-  pending_quality: {
-    slug: 'enviado',
-    label: 'Enviado a Calidad',
-    className: 'border-sky-200 bg-sky-50 text-sky-800',
+  quality: {
+    label: 'APROBADO - CALIDAD',
+    className: 'border-emerald-800 bg-emerald-700 text-white shadow-sm',
   },
   rejected: {
-    slug: 'rechazado',
-    label: 'Rechazado',
-    className: 'border-rose-200 bg-rose-50 text-rose-800',
+    label: 'RECHAZADO - DESVIACIÓN',
+    className: 'border-red-800 bg-red-700 text-white shadow-sm',
   },
-  approved: {
-    slug: 'ht',
-    label: 'Historial Tecnico',
-    className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  },
-};
+} as const satisfies Record<string, LifecycleState>;
 
 const actionBadgeStyles: Record<ActionBadge['label'], string> = {
   Insert: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -81,12 +71,48 @@ function getReportStatus(reporte: ActivoReporteDetalle) {
   return getStringValue(reporte.status, 'draft');
 }
 
+function normalizeReportStatus(reporte: ActivoReporteDetalle) {
+  return getReportStatus(reporte)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
 function resolveLifecycle(reporte: ActivoReporteDetalle) {
-  return lifecycleByStatus[getReportStatus(reporte)] ?? lifecycleByStatus.draft;
+  const status = normalizeReportStatus(reporte);
+
+  if (
+    status.includes('reject') ||
+    status.includes('rechaz') ||
+    status.includes('nok') ||
+    Boolean(reporte.rejection_comments?.trim())
+  ) {
+    return GXP_STATUS_BADGES.rejected;
+  }
+
+  if (
+    status === 'approved' ||
+    status === 'closed' ||
+    status === 'aprobado' ||
+    Boolean(reporte.quality_signed_at || reporte.quality_signed_by)
+  ) {
+    return GXP_STATUS_BADGES.quality;
+  }
+
+  if (
+    status === 'pending_quality' ||
+    status === 'pending_management' ||
+    status === 'revisado_supervisor' ||
+    Boolean(reporte.supervisor_signed_at || reporte.supervisor_signed_by)
+  ) {
+    return GXP_STATUS_BADGES.supervisor;
+  }
+
+  return GXP_STATUS_BADGES.technician;
 }
 
 function resolveActionBadge(reporte: ActivoReporteDetalle): ActionBadge {
-  const status = getReportStatus(reporte);
+  const status = normalizeReportStatus(reporte);
 
   if (status === 'rejected') {
     return {
@@ -611,15 +637,10 @@ export default async function ActivoHvacDetallePage({
                     />
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <span>Action</span>
+                    <span>Acción Ejecutada</span>
                     <SectionInfoTooltip
-                      label="Action"
-                      message="Clasificacion operacional del movimiento registrado en la bitacora."
-                    />
-                    <span>Badge</span>
-                    <SectionInfoTooltip
-                      label="Badge"
-                      message="Indicador visual de insercion, actualizacion o inactivacion del registro."
+                      label="Acción Ejecutada"
+                      message="Tipo de evento técnico o firma electrónica registrada en el Audit Trail bajo la norma FDA 21 CFR Part 11."
                     />
                   </span>
                   <span className="inline-flex items-center gap-1">
@@ -630,10 +651,10 @@ export default async function ActivoHvacDetallePage({
                     />
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    Status Pill
+                    Estado Regulatorio
                     <SectionInfoTooltip
-                      label="Status Pill"
-                      message="Estado validado del ciclo RUI segun su aprobacion, rechazo o condicion activa."
+                      label="Estado Regulatorio"
+                      message="Representa la fase actual del flujo de revisión humana y aprobación electrónica del reporte (Técnico -> Supervisor -> Calidad)."
                     />
                   </span>
                   <span className="inline-flex items-center gap-1">
@@ -644,15 +665,10 @@ export default async function ActivoHvacDetallePage({
                     />
                   </span>
                   <span className="inline-flex items-center justify-end gap-1 text-right">
-                    <span>Action</span>
+                    <span>Operaciones</span>
                     <SectionInfoTooltip
-                      label="Action"
-                      message="Comando disponible para navegar al reporte tecnico asociado."
-                    />
-                    <span>Button</span>
-                    <SectionInfoTooltip
-                      label="Button"
-                      message="Control de acceso al detalle del RUI o WO seleccionado."
+                      label="Operaciones"
+                      message="Apertura del expediente completo en pantalla para la inspección y verificación visual de evidencias."
                     />
                   </span>
                 </div>
@@ -681,7 +697,7 @@ export default async function ActivoHvacDetallePage({
 
                         <div>
                           <p className="text-[11px] font-black uppercase tracking-wide text-slate-500 xl:hidden">
-                            Action Badge
+                            Acción Ejecutada
                           </p>
                           <span
                             className={`mt-1 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-black xl:mt-0 ${actionBadge.className}`}
@@ -712,7 +728,7 @@ export default async function ActivoHvacDetallePage({
 
                         <div>
                           <p className="text-[11px] font-black uppercase tracking-wide text-slate-500 xl:hidden">
-                            Status Pill
+                            Estado Regulatorio
                           </p>
                           <span
                             className={`mt-1 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-black xl:mt-0 ${lifecycle.className}`}
