@@ -1,54 +1,67 @@
 'use client';
 
-import { FormEvent, useMemo, useRef, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Info, Search, ShieldCheck } from 'lucide-react';
 import { APP_ROUTES } from '@/modules/common/routes';
+import { supabase } from '@/shared/lib/supabase';
 
-const VALID_ASSET_IDENTIFIER_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{2,63}$/;
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{3,4}-[0-9a-f]{3,4}-[0-9a-f]{12}$/i;
+const VALID_ASSET_TAG_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,31}$/;
 
-function normalizeIdentifier(value: string) {
-  return value.trim();
+type AssetLookupRow = {
+  asset_code: string;
+  uuid: string;
+};
+
+function normalizeAssetTag(value: string) {
+  return value.trim().toUpperCase();
 }
 
-function isValidAssetIdentifier(value: string) {
-  return UUID_PATTERN.test(value) || VALID_ASSET_IDENTIFIER_PATTERN.test(value);
+function isValidAssetTag(value: string) {
+  return VALID_ASSET_TAG_PATTERN.test(value);
 }
 
 export default function ActivoHvacVerSearchPage() {
   const router = useRouter();
-  const lastRedirectedIdentifier = useRef<string | null>(null);
   const [identifier, setIdentifier] = useState('');
   const [hasSubmitted, setHasSubmitted] = useState(false);
-  const normalizedIdentifier = useMemo(() => normalizeIdentifier(identifier), [identifier]);
-  const isValidIdentifier = isValidAssetIdentifier(normalizedIdentifier);
+  const [isResolving, setIsResolving] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const normalizedAssetTag = useMemo(() => normalizeAssetTag(identifier), [identifier]);
+  const isValidIdentifier = isValidAssetTag(normalizedAssetTag);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setHasSubmitted(true);
+    setLookupError(null);
 
     if (!isValidIdentifier) {
       return;
     }
 
-    lastRedirectedIdentifier.current = normalizedIdentifier;
-    router.push(APP_ROUTES.activos.hvacProfile(normalizedIdentifier));
-  }
+    setIsResolving(true);
 
-  function handleIdentifierChange(value: string) {
-    setIdentifier(value);
+    const { data, error } = await supabase
+      .from('activos')
+      .select('uuid, asset_code')
+      .eq('asset_code', normalizedAssetTag)
+      .maybeSingle();
 
-    const nextIdentifier = normalizeIdentifier(value);
+    setIsResolving(false);
 
-    if (
-      UUID_PATTERN.test(nextIdentifier) &&
-      lastRedirectedIdentifier.current !== nextIdentifier
-    ) {
-      lastRedirectedIdentifier.current = nextIdentifier;
-      router.push(APP_ROUTES.activos.hvacProfile(nextIdentifier));
+    if (error) {
+      setLookupError('No fue posible consultar el expediente en Supabase.');
+      return;
     }
+
+    const asset = (data ?? null) as AssetLookupRow | null;
+
+    if (!asset?.uuid) {
+      setLookupError(`No existe un expediente PDAC activo para ${normalizedAssetTag}.`);
+      return;
+    }
+
+    router.push(APP_ROUTES.activos.hvacProfile(asset.uuid));
   }
 
   return (
@@ -100,7 +113,7 @@ export default function ActivoHvacVerSearchPage() {
               </h1>
               <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
                 Terminal regulado para localizar perfiles dinamicos de activos criticos HVAC por
-                UUID, codigo de activo o lectura QR emulada.
+                codigo humano de activo, etiqueta fisica o lectura QR emulada.
               </p>
             </div>
             <span className="inline-flex w-fit items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black uppercase tracking-wide text-emerald-800">
@@ -125,8 +138,8 @@ export default function ActivoHvacVerSearchPage() {
                 autoFocus
                 className="min-h-14 w-full bg-transparent font-mono text-xl font-black uppercase tracking-wide text-slate-950 outline-none placeholder:text-slate-400"
                 inputMode="text"
-                onChange={(event) => handleIdentifierChange(event.target.value)}
-                placeholder="D1C86FD0-7263-46F8-B9F9-5F62C85E10C9"
+                onChange={(event) => setIdentifier(event.target.value)}
+                placeholder="HVAC-01"
                 spellCheck={false}
                 type="text"
                 value={identifier}
@@ -136,20 +149,26 @@ export default function ActivoHvacVerSearchPage() {
 
           {hasSubmitted && !isValidIdentifier ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
-              Identificador no valido. Use un UUID completo o un codigo alfanumerico de activo.
+              Codigo no valido. Use el Asset Tag fisico del equipo, por ejemplo HVAC-01.
+            </div>
+          ) : null}
+
+          {lookupError ? (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-900">
+              {lookupError}
             </div>
           ) : null}
 
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <p className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500">
-              TARGET_ROUTE:{APP_ROUTES.activos.hvacProfileSearch}/[id]
+              LOOKUP:PUBLIC.ACTIVOS.ASSET_CODE -&gt; RUTA INTERNA
             </p>
             <button
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-slate-900 px-5 text-sm font-black uppercase tracking-wide text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-              disabled={!normalizedIdentifier}
+              disabled={!normalizedAssetTag || isResolving}
               type="submit"
             >
-              Abrir expediente PDAC
+              {isResolving ? 'Resolviendo expediente...' : 'Abrir expediente PDAC'}
               <ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0" />
             </button>
           </div>

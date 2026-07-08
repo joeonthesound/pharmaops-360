@@ -190,15 +190,6 @@ function getOperatorToken(value: string | null | undefined) {
   return normalizedValue.slice(0, 18);
 }
 
-function getAuditFootprint(paramsId: string, activoUuid: string | null | undefined) {
-  const candidate = paramsId || activoUuid || 'SIN-ID';
-  const normalizedCandidate = candidate.trim().toUpperCase();
-
-  return normalizedCandidate.length > 12
-    ? normalizedCandidate.slice(0, 12)
-    : normalizedCandidate;
-}
-
 function HeaderMetadataBadge({ label, value }: { label: string; value: string }) {
   return (
     <span className="font-mono text-xs font-bold bg-slate-100 text-slate-700 px-3 py-1.5 rounded-md border border-slate-200 shadow-sm whitespace-nowrap">
@@ -435,8 +426,8 @@ export default async function ActivoHvacDetallePage({
             No data found for this identifier
           </h1>
           <p className="text-sm leading-6">
-            No se encontro un activo HVAC con el identificador solicitado. Verifique el UUID o codigo
-            del activo antes de continuar.
+            No se encontro un activo HVAC con el codigo de expediente solicitado. Verifique el
+            Asset Tag fisico del activo antes de continuar.
           </p>
         </section>
       </main>
@@ -445,12 +436,11 @@ export default async function ActivoHvacDetallePage({
 
   const activo = data.activo;
   const location = [activo.location_detail, activo.area, activo.site].filter(Boolean).join(' / ');
-  const assetTitle = `${activo.asset_code} (${activo.asset_name || 'Air Handling Unit UMA-01'})`;
+  const assetDisplayName = activo.asset_name || 'Manejadora de Aire';
   const currentUserRole = data.seguridad.usuarioRole;
   const canRenderAdminPanel = isAdminProfile(currentUserRole);
   const canRenderSuperadminPanel = isSuperadminProfile(currentUserRole);
   const operatorId = getOperatorToken(data.debug.usuarioEmail);
-  const auditFootprint = getAuditFootprint(resolvedParams.id, activo.uuid);
   const mtbfLabel = calculateMtbfLabel(data.historial_mantenimientos);
   const calibrationProgress = getCalibrationProgress(activo.last_maintenance_date);
   const statusBlocks = getStatusDeltaBlocks(data.historial_mantenimientos);
@@ -485,7 +475,7 @@ export default async function ActivoHvacDetallePage({
           <div className="flex flex-wrap justify-end gap-2">
             <HeaderMetadataBadge label="FORM_ID" value="FOR-PDAC-REV" />
             <HeaderMetadataBadge label="OPERATOR_ID" value={operatorId} />
-            <HeaderMetadataBadge label="AUDIT_FOOTPRINT" value={auditFootprint} />
+            <HeaderMetadataBadge label="EXPEDIENTE" value={activo.asset_code} />
           </div>
 
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -498,8 +488,9 @@ export default async function ActivoHvacDetallePage({
                   message="Expediente digital inalterable que consolida el historial de calibración, calificación e inspecciones del activo HVAC."
                 />
               </p>
-              <h1 className="mt-1 text-2xl font-black tracking-normal text-slate-950 md:text-3xl">
-                {assetTitle}
+              <h1 className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-3xl font-black tracking-normal text-slate-950 md:text-5xl">
+                <span>{assetDisplayName}</span>
+                <span className="font-mono text-indigo-700">{activo.asset_code}</span>
               </h1>
             </div>
             <span className="inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-900">
