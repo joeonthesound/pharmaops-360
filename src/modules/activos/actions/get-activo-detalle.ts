@@ -238,7 +238,8 @@ function isEvidenceField(row: FormularioRespuestaEvidenciaRow) {
     serializedValue.includes('"path"') ||
     serializedValue.includes('/storage/v1/object/') ||
     serializedValue.includes(EVIDENCE_BUCKET) ||
-    serializedValue.includes('evidencias/')
+    serializedValue.includes('evidencias/') ||
+    /^https?:\/\/.+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(serializedValue)
   );
 }
 

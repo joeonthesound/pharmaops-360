@@ -4,11 +4,16 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import { HelpCircle } from 'lucide-react';
 
 type SectionInfoTooltipProps = {
+  includeDocumentationLink?: boolean;
   label: string;
   message: string;
 };
 
-export function SectionInfoTooltip({ label, message }: SectionInfoTooltipProps) {
+export function SectionInfoTooltip({
+  includeDocumentationLink = false,
+  label,
+  message,
+}: SectionInfoTooltipProps) {
   return (
     <Tooltip.Provider delayDuration={120}>
       <Tooltip.Root>
@@ -28,15 +33,17 @@ export function SectionInfoTooltip({ label, message }: SectionInfoTooltipProps) 
             sideOffset={8}
           >
             <p>{message}</p>
-            <p className="mt-2 text-xs font-bold text-slate-200">
-              Para ampliar la informacion, consulte la documentacion oficial en el manual.{' '}
-              <a
-                className="font-black text-emerald-300 underline decoration-emerald-300 underline-offset-4"
-                href="/docs/protocolos"
-              >
-                /docs/protocolos
-              </a>
-            </p>
+            {includeDocumentationLink ? (
+              <p className="mt-2 text-xs font-bold text-slate-200">
+                Para ampliar la informacion, consulte la documentacion oficial en el manual.{' '}
+                <a
+                  className="font-black text-emerald-300 underline decoration-emerald-300 underline-offset-4"
+                  href="/docs/protocolos"
+                >
+                  /docs/protocolos
+                </a>
+              </p>
+            ) : null}
             <Tooltip.Arrow className="fill-slate-950" />
           </Tooltip.Content>
         </Tooltip.Portal>

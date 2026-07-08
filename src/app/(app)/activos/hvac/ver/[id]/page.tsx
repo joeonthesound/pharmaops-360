@@ -15,6 +15,7 @@ import {
 import { AssetImageDialog } from './asset-image-dialog';
 import { SectionInfoTooltip } from './section-info-tooltip';
 import { SuperadminDebugPanel } from './superadmin-debug-panel';
+import { TechnicalFichaTabs } from './technical-ficha-tabs';
 import {
   AdminQualificationCard,
   SuperadminDestructiveCard,
@@ -293,49 +294,17 @@ function getMtbfTrendBars(reportes: ActivoReporteDetalle[]) {
   }));
 }
 
-function AcronymTooltip({ type }: { type: 'RUI' | 'WO' }) {
-  const description =
-    type === 'RUI'
-      ? 'Reporte Único de Inspección: Registro técnico inmutable del estado del activo'
-      : 'Work Order / Órden de Trabajo: Código maestro de mantenimiento programado';
-
-  return (
-    <span className="group relative inline-flex">
-      <span className="cursor-help underline decoration-dotted underline-offset-2">{type}</span>
-      <span
-        className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-[min(360px,80vw)] rounded-md border border-slate-700 bg-slate-950 p-3 text-left text-xs font-semibold leading-5 text-white shadow-xl group-hover:block"
-        role="tooltip"
-      >
-        {description}{' '}
-        <a
-          className="pointer-events-auto font-black text-emerald-300 underline decoration-emerald-300 underline-offset-4"
-          href="/docs/protocolos"
-        >
-          /docs/protocolos
-        </a>
-      </span>
-    </span>
-  );
-}
-
 function RecordCodeBadge({ code }: { code: string }) {
   const normalizedCode = code.toUpperCase();
-  const acronym = normalizedCode.startsWith('RUI-')
-    ? 'RUI'
-    : normalizedCode.startsWith('WO-')
-      ? 'WO'
-      : null;
+  const shouldHighlight = normalizedCode.startsWith('RUI-') || normalizedCode.startsWith('WO-');
 
-  if (!acronym) {
+  if (!shouldHighlight) {
     return <span className="font-mono text-sm font-black text-slate-950">{code}</span>;
   }
 
-  const suffix = code.slice(acronym.length);
-
   return (
-    <span className="inline-flex w-fit items-center gap-0 font-mono font-bold text-xs text-indigo-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 shadow-sm">
-      <AcronymTooltip type={acronym} />
-      <span>{suffix}</span>
+    <span className="inline-flex w-fit font-mono font-bold text-xs text-indigo-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 shadow-sm">
+      {code}
     </span>
   );
 }
@@ -368,7 +337,11 @@ function MetricCluster({
       <article className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-            Tiempo Medio Entre Fallas
+            Tiempo Medio Entre Fallas (MTBF)
+            <SectionInfoTooltip
+              label="Tiempo Medio Entre Fallas"
+              message="Indicador estadístico que mide la confiabilidad del activo. Se alimenta del intervalo de tiempo entre desviaciones críticas reportadas en los RUI. Afecta la programación del mantenimiento preventivo."
+            />
           </p>
           <TrendingUp aria-hidden="true" className="h-5 w-5 shrink-0 text-indigo-600" />
         </div>
@@ -392,6 +365,10 @@ function MetricCluster({
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-black uppercase tracking-wide text-amber-800">
             Ciclo de Vida de Calibracion
+            <SectionInfoTooltip
+              label="Ciclo de Vida de Calibracion"
+              message="Mapeo porcentual del tiempo de vigencia técnica remanente del instrumento. Se alimenta de la fecha de última calibración versus vencimiento regulatorio. Evita paros de línea por descalificación GxP."
+            />
           </p>
           <Gauge aria-hidden="true" className="h-5 w-5 shrink-0 text-amber-700" />
         </div>
@@ -410,6 +387,10 @@ function MetricCluster({
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-black uppercase tracking-wide text-slate-500">
             Delta de Fallas Operacionales
+            <SectionInfoTooltip
+              label="Delta de Fallas Operacionales"
+              message="Representación cuantitativa del comportamiento histórico de fallas. Se alimenta de la relación de RUIs aprobados versus rechazados. Permite evaluar el desgaste del equipo."
+            />
           </p>
           <BarChart3 aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-700" />
         </div>
@@ -474,6 +455,24 @@ export default async function ActivoHvacDetallePage({
   const calibrationProgress = getCalibrationProgress(activo.last_maintenance_date);
   const statusBlocks = getStatusDeltaBlocks(data.historial_mantenimientos);
   const trendBars = getMtbfTrendBars(data.historial_mantenimientos);
+  const datosGenerales = [
+    { label: 'ID del Activo', value: activo.asset_code },
+    { label: 'Descripcion', value: activo.asset_name },
+    { label: 'Ubicacion', value: location || 'Ubicacion no disponible' },
+    { label: 'Area', value: activo.area },
+  ];
+  const limitesGxp = [
+    { label: 'Tipo', value: activo.asset_type },
+    { label: 'Frecuencia de Mantenimiento', value: activo.maintenance_frequency },
+    { label: 'Ultimo Mantenimiento', value: activo.last_maintenance_date ?? 'No registrada' },
+    { label: 'Proximo Mantenimiento', value: activo.next_maintenance_date ?? 'No programado' },
+  ];
+  const registroFabrica = [
+    { label: 'Modelo', value: activo.model },
+    { label: 'Numero de Serie', value: activo.serial_number },
+    { label: 'Fabricante', value: activo.brand },
+    { label: 'Capacidad', value: `${activo.capacity} ${activo.capacity_unit}`.trim() },
+  ];
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
@@ -491,8 +490,13 @@ export default async function ActivoHvacDetallePage({
 
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                Perfil dinamico de activo critico
+              <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
+                Perfil Dinamico de Activo Critico (PDAC)
+                <SectionInfoTooltip
+                  includeDocumentationLink
+                  label="Perfil Dinamico de Activo Critico"
+                  message="Expediente digital inalterable que consolida el historial de calibración, calificación e inspecciones del activo HVAC."
+                />
               </p>
               <h1 className="mt-1 text-2xl font-black tracking-normal text-slate-950 md:text-3xl">
                 {assetTitle}
@@ -536,17 +540,11 @@ export default async function ActivoHvacDetallePage({
               />
             </div>
 
-            <dl className="mt-2 grid gap-x-6 md:grid-cols-2 xl:grid-cols-3">
-              <MetadataRow label="ID del Activo" value={activo.asset_code} />
-              <MetadataRow label="Descripcion" value={activo.asset_name} />
-              <MetadataRow label="Ubicacion" value={location || 'Ubicacion no disponible'} />
-              <MetadataRow label="Modelo" value={activo.model} />
-              <MetadataRow label="Numero de Serie" value={activo.serial_number} />
-              <MetadataRow label="Fabricante" value={activo.brand} />
-              <MetadataRow label="Tipo" value={activo.asset_type} />
-              <MetadataRow label="Area" value={activo.area} />
-              <MetadataRow label="Frecuencia de Mantenimiento" value={activo.maintenance_frequency} />
-            </dl>
+            <TechnicalFichaTabs
+              datosGenerales={datosGenerales}
+              limitesGxp={limitesGxp}
+              registroFabrica={registroFabrica}
+            />
           </section>
 
           <aside className="grid content-start gap-4 lg:col-span-3">
@@ -614,12 +612,58 @@ export default async function ActivoHvacDetallePage({
             ) : (
               <div className="overflow-hidden rounded-lg border border-slate-200">
                 <div className="hidden grid-cols-[1fr_130px_1.25fr_1fr_150px_130px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-black uppercase tracking-wide text-slate-500 xl:grid">
-                  <span>Timestamp (UTC)</span>
-                  <span>Action Badge</span>
-                  <span>RUI / WO Dominante</span>
-                  <span>Status Pill</span>
-                  <span>Adjuntos</span>
-                  <span className="text-right">Action Button</span>
+                  <span className="inline-flex items-center gap-1">
+                    Timestamp (UTC)
+                    <SectionInfoTooltip
+                      label="Timestamp UTC"
+                      message="Fecha y hora normalizada en UTC del registro RUI o WO hidratado desde Supabase."
+                    />
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span>Action</span>
+                    <SectionInfoTooltip
+                      label="Action"
+                      message="Clasificacion operacional del movimiento registrado en la bitacora."
+                    />
+                    <span>Badge</span>
+                    <SectionInfoTooltip
+                      label="Badge"
+                      message="Indicador visual de insercion, actualizacion o inactivacion del registro."
+                    />
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    RUI / WO Dominante
+                    <SectionInfoTooltip
+                      label="RUI / WO Dominante"
+                      message="Identificador maestro del reporte unico de inspeccion o de la orden de trabajo asociada."
+                    />
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    Status Pill
+                    <SectionInfoTooltip
+                      label="Status Pill"
+                      message="Estado validado del ciclo RUI segun su aprobacion, rechazo o condicion activa."
+                    />
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    Adjuntos
+                    <SectionInfoTooltip
+                      label="Adjuntos"
+                      message="Conteo matematico de archivos reales asociados al dataset del reporte en Supabase."
+                    />
+                  </span>
+                  <span className="inline-flex items-center justify-end gap-1 text-right">
+                    <span>Action</span>
+                    <SectionInfoTooltip
+                      label="Action"
+                      message="Comando disponible para navegar al reporte tecnico asociado."
+                    />
+                    <span>Button</span>
+                    <SectionInfoTooltip
+                      label="Button"
+                      message="Control de acceso al detalle del RUI o WO seleccionado."
+                    />
+                  </span>
                 </div>
 
                 <div className="divide-y divide-slate-200">
