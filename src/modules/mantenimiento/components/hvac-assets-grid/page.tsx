@@ -1,6 +1,8 @@
-﻿import Link from 'next/link';
+import Link from 'next/link';
+import { Info } from 'lucide-react';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 import type { Activo, ActivoEstado } from '@/modules/activos/activos.interface';
+import { RUI_ROUTE_GOVERNANCE_METADATA } from '@/modules/common/screen-governance';
 import { EmptyTabState } from './empty-tab-state';
 import { GridRefreshOnMount } from './grid-refresh-on-mount';
 import { TechnicalHistoryGrid } from './technical-history-grid';
@@ -137,6 +139,37 @@ const defaultTabCounts: Record<DashboardView, number> = {
   rejected: 0,
   history: 0,
 };
+
+function GxpRouteInfoTooltip({
+  documentationHref,
+  label,
+  message,
+}: {
+  documentationHref: string;
+  label: string;
+  message: string;
+}) {
+  return (
+    <span className="group relative inline-flex align-middle">
+      <button
+        aria-label={`Informacion documental de ${label}`}
+        className="inline-flex h-8 w-8 cursor-help items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:border-slate-500 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-300"
+        type="button"
+      >
+        <Info aria-hidden="true" className="h-4 w-4 shrink-0" />
+      </button>
+      <span className="pointer-events-none absolute left-0 top-10 z-50 hidden w-[min(22rem,calc(100vw-2rem))] rounded-md border border-slate-800 bg-slate-950 p-3 text-left text-xs font-semibold leading-5 text-white shadow-xl group-hover:block group-focus-within:block md:left-auto md:right-0">
+        <span className="block cursor-text select-text">{message}</span>
+        <a
+          className="pointer-events-auto mt-2 inline-flex cursor-pointer select-text font-mono text-[11px] font-black uppercase tracking-wide text-sky-200 underline decoration-sky-300 underline-offset-4"
+          href={documentationHref}
+        >
+          {documentationHref}
+        </a>
+      </span>
+    </span>
+  );
+}
 
 const SENT_STATUSES: Array<MantenimientoRegistro['status']> = [
   'PENDING_SUPERVISOR',
@@ -679,6 +712,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const visiblePendingStatuses = resolvePendingStatusesForRole(roleScope);
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const currentView = normalizeView(resolvedSearchParams.view);
+  const routeGovernance = RUI_ROUTE_GOVERNANCE_METADATA[currentView];
   const statusesForView = resolveStatusesForView(currentView, roleScope);
   const statusFilterForView =
     currentView === 'pending' ? visiblePendingStatuses : statusesForView;
@@ -887,15 +921,24 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950">
       <GridRefreshOnMount />
-      <section className="mx-auto flex w-full max-w-6xl flex-col gap-5">
+      <section className="mx-auto flex w-full max-w-[98vw] flex-col gap-5">
         <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">
               Piloto HVAC
             </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-normal">Activos</h1>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+              <h1 className="min-w-0 text-2xl font-semibold tracking-normal">
+                {routeGovernance.title}
+              </h1>
+              <GxpRouteInfoTooltip
+                documentationHref={routeGovernance.documentationHref}
+                label={routeGovernance.title}
+                message={routeGovernance.tooltip}
+              />
+            </div>
             <p className="mt-1 text-sm text-slate-600">
-              Flota registrada para mantenimiento preventivo e inspeccion tecnica.
+              {routeGovernance.tooltip}
             </p>
           </div>
           <button

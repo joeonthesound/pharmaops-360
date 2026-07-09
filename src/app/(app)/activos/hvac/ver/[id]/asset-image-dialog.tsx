@@ -99,14 +99,6 @@ export function AssetImageDialog({ assetCode, imageUrl, version }: AssetImageDia
                   ASSET_TAG: {assetCode} | VERSION: Rev. {version ?? 'N/D'}
                 </span>
               </Dialog.Title>
-              <div className="flex flex-wrap gap-2 md:justify-end">
-                <span className="rounded border border-slate-700 bg-slate-950 px-2.5 py-1 font-mono text-[11px] font-black uppercase tracking-wide text-slate-200">
-                  FORM_ID: FOR-PDAC-REV
-                </span>
-                <span className="rounded border border-slate-700 bg-slate-950 px-2.5 py-1 font-mono text-[11px] font-black uppercase tracking-wide text-slate-200">
-                  SCREEN_ID: SCREEN-ACT-REV-01
-                </span>
-              </div>
             </div>
 
             <Dialog.Close

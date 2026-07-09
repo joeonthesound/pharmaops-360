@@ -7,6 +7,7 @@ Cada documento debe contener:
 1. Objetivo del proceso.
 2. Reglas de negocio y validaciones GxP aplicables.
 3. Diagrama de flujo en formato Mermaid.
+4. Verificar si el Diagrama de Base de datos cambió o no, si se cambió debe actualizar el archivo docs/sql/DOC-DATABASE-CONSTITUTION.md
 
 ## Modulos priorizados
 

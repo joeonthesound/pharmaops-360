@@ -119,8 +119,6 @@ export default function HvacTechnicalExecutionPage({ params }: TechnicalExecutio
 
     console.group('[GxP TECHNICAL UPLOAD ADUANA — SUBMITTING EXECUTION DATA]');
     console.log('RUI:', rui);
-    console.log('FORM_ID:', 'FOR-MNT-HVAC-TECH');
-    console.log('SCREEN_ID:', 'SCREEN-MNT-TECH-01');
     console.log('payload:', {
       rui,
       technicianName: values.technicianName,
@@ -149,14 +147,6 @@ export default function HvacTechnicalExecutionPage({ params }: TechnicalExecutio
             <p className="mt-1 text-sm font-semibold text-slate-600">
               Registro de lecturas instrumentales y firma técnica de campo.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2 md:justify-end">
-            <span className="rounded border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-[11px] font-black uppercase tracking-wide text-slate-700">
-              FORM_ID: FOR-MNT-HVAC-TECH
-            </span>
-            <span className="rounded border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-[11px] font-black uppercase tracking-wide text-slate-700">
-              SCREEN_ID: SCREEN-MNT-TECH-01
-            </span>
           </div>
         </header>
 

@@ -12,14 +12,6 @@ type AssetChangeControlPageProps = {
   }>;
 };
 
-function StampBadge({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="inline-flex rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 font-mono text-xs font-black uppercase tracking-wide text-white shadow-sm">
-      [{label}: {value}]
-    </span>
-  );
-}
-
 function isHumanAssetTag(value: string) {
   return /[a-z]/i.test(value);
 }
@@ -48,9 +40,6 @@ export default async function AssetChangeControlPage({
       <main className="min-h-screen bg-slate-100 text-slate-950">
         <div className="w-full max-w-[98vw] mx-auto px-4 lg:px-6 py-6">
           <section className="rounded-lg border border-amber-200 bg-amber-50 p-6 shadow-sm">
-            <p className="font-mono text-xs font-black uppercase tracking-wide text-amber-900">
-              [FORM_ID: FOR-PDAC-CC] [SCREEN_ID: SCREEN-ACT-CC-01]
-            </p>
             <h1 className="mt-3 text-2xl font-black text-slate-950">Activo no localizado</h1>
             <p className="mt-2 text-sm font-semibold text-amber-950">
               No se encontro un activo canonico para iniciar control de cambios.
@@ -97,10 +86,6 @@ export default async function AssetChangeControlPage({
               <ArrowLeft aria-hidden="true" className="h-4 w-4 shrink-0" />
               Volver a PDAC
             </Link>
-            <div className="flex flex-wrap justify-end gap-2">
-              <StampBadge label="FORM_ID" value="FOR-PDAC-CC" />
-              <StampBadge label="SCREEN_ID" value="SCREEN-ACT-CC-01" />
-            </div>
           </div>
 
           <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">

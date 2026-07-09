@@ -500,7 +500,6 @@ export default async function ActivoHvacDetallePage({
       <div className="mx-auto grid w-full max-w-[98vw] gap-5 px-4 py-6 lg:px-6">
         <header className="grid gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap justify-end gap-2">
-            <HeaderMetadataBadge label="FORM_ID" value="FOR-PDAC-REV" />
             <HeaderMetadataBadge label="OPERATOR_ID" value={operatorId} />
             <HeaderMetadataBadge label="EXPEDIENTE" value={activo.asset_code} />
           </div>

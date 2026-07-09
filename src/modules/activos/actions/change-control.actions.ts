@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
+import { CHANGE_CONTROL_INTERFACE_IDENTIFIER } from '@/modules/common/screen-governance';
 import { createSupabaseServerClient } from '@/shared/lib/supabase-server';
 
 export type ChangeControlJson = Record<string, unknown>;
@@ -11,8 +12,7 @@ export type ChangeControlActionResult = {
   message: string;
   changeControlId?: string;
   diagnostic: {
-    formId: 'FOR-PDAC-CC';
-    screenId: 'SCREEN-ACT-CC-01';
+    interfaceIdentifier: typeof CHANGE_CONTROL_INTERFACE_IDENTIFIER;
     stage: string;
     assetId?: number;
     timestampUtc?: string;
@@ -38,8 +38,6 @@ type ChangeControlInsertException = Error & {
   timestampUtc?: string;
 };
 
-const FORM_ID = 'FOR-PDAC-CC';
-const SCREEN_ID = 'SCREEN-ACT-CC-01';
 const PENDING_STATUS = 'PENDIENTE';
 
 function normalizeText(value: string | null | undefined) {
@@ -123,8 +121,7 @@ export async function submitChangeControlAction(
 
   if (!Number.isFinite(assetId) || assetId <= 0) {
     return buildFailureResult('asset_id debe ser numerico y corresponder a public.activos.id.', {
-      formId: FORM_ID,
-      screenId: SCREEN_ID,
+      interfaceIdentifier: CHANGE_CONTROL_INTERFACE_IDENTIFIER,
       stage: 'asset_id_validation',
     });
   }
@@ -133,8 +130,7 @@ export async function submitChangeControlAction(
     return buildFailureResult(
       'La justificacion tecnica debe contener al menos 15 caracteres.',
       {
-        formId: FORM_ID,
-        screenId: SCREEN_ID,
+        interfaceIdentifier: CHANGE_CONTROL_INTERFACE_IDENTIFIER,
         stage: 'technical_justification_validation',
         assetId,
       },
@@ -165,8 +161,7 @@ export async function submitChangeControlAction(
 
     if (userError) {
       return buildFailureResult('No fue posible leer la sesion del operador GxP.', {
-        formId: FORM_ID,
-        screenId: SCREEN_ID,
+        interfaceIdentifier: CHANGE_CONTROL_INTERFACE_IDENTIFIER,
         stage: 'operator_session_lookup',
         assetId,
         timestampUtc,
@@ -176,8 +171,7 @@ export async function submitChangeControlAction(
 
     if (!user?.id) {
       return buildFailureResult('No fue posible identificar el UUID del operador GxP.', {
-        formId: FORM_ID,
-        screenId: SCREEN_ID,
+        interfaceIdentifier: CHANGE_CONTROL_INTERFACE_IDENTIFIER,
         stage: 'operator_uuid_validation',
         assetId,
         timestampUtc,
@@ -260,8 +254,7 @@ export async function submitChangeControlAction(
       changeControlId:
         typeof data?.id === 'string' ? data.id : data?.id ? String(data.id) : undefined,
       diagnostic: {
-        formId: FORM_ID,
-        screenId: SCREEN_ID,
+        interfaceIdentifier: CHANGE_CONTROL_INTERFACE_IDENTIFIER,
         stage: 'control_cambios_activos_inserted',
         assetId,
         timestampUtc,
@@ -272,8 +265,7 @@ export async function submitChangeControlAction(
 
     if (insertException.stage === 'control_cambios_activos_insert') {
       return buildFailureResult('No fue posible registrar el control de cambios del activo.', {
-        formId: FORM_ID,
-        screenId: SCREEN_ID,
+        interfaceIdentifier: CHANGE_CONTROL_INTERFACE_IDENTIFIER,
         stage: 'control_cambios_activos_insert',
         assetId,
         timestampUtc: insertException.timestampUtc,
@@ -282,8 +274,7 @@ export async function submitChangeControlAction(
     }
 
     return buildFailureResult('Fallo inesperado al registrar el control de cambios.', {
-      formId: FORM_ID,
-      screenId: SCREEN_ID,
+      interfaceIdentifier: CHANGE_CONTROL_INTERFACE_IDENTIFIER,
       stage: 'unexpected_exception',
       assetId,
       supabaseError: {

@@ -5,14 +5,6 @@ import {
   type ChangeControlReviewRow,
 } from '@/modules/activos/actions/qa-signoff.actions';
 
-function StampBadge({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="inline-flex rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 font-mono text-xs font-black uppercase tracking-wide text-white shadow-sm">
-      [{label}: {value}]
-    </span>
-  );
-}
-
 function getJsonStringValue(source: Record<string, unknown>, key: string) {
   const value = source[key];
 
@@ -49,11 +41,7 @@ export default async function QaSignoffHubPage() {
     <main className="min-h-screen bg-slate-100 text-slate-950">
       <div className="w-full max-w-[98vw] mx-auto px-4 lg:px-6 py-6">
         <header className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap justify-end gap-2">
-            <StampBadge label="FORM_ID" value="FOR-QA-SIGNOFF" />
-            <StampBadge label="SCREEN_ID" value="SCREEN-QA-SIGNOFF-01" />
-          </div>
-          <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
                 <ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-700" />

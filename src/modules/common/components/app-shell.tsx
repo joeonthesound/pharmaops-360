@@ -13,6 +13,7 @@ import type { NotificationRoleContext } from '@/types/database.types';
 import { Sidebar } from './sidebar';
 import { supabase } from '@/shared/lib/supabase';
 import { APP_ROUTES } from '@/modules/common/routes';
+import { resolveInterfaceIdentifier } from '@/modules/common/screen-governance';
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -112,39 +113,7 @@ function getPathUuid(pathname: string) {
 }
 
 function resolveScreenId(pathname: string) {
-  if (pathname === APP_ROUTES.activos.master) {
-    return 'SCREEN-ACT-MASTER-01';
-  }
-
-  if (pathname === APP_ROUTES.activos.hvac) {
-    return 'SCREEN-ACT-HVAC-01';
-  }
-
-  if (pathname === APP_ROUTES.activos.hvacProfileSearch) {
-    return 'SCREEN-ACT-PDAC-SEARCH-01';
-  }
-
-  if (pathname.startsWith(`${APP_ROUTES.activos.hvacProfileSearch}/`)) {
-    return 'SCREEN-ACT-VER-01';
-  }
-
-  if (pathname === APP_ROUTES.mantenimiento.crearOrdenes) {
-    return 'SCREEN-MNT-ORD-01';
-  }
-
-  if (pathname.includes('/aprobar')) {
-    return 'SCREEN-MNT-APR-01';
-  }
-
-  if (pathname.includes('/rui/')) {
-    return 'SCREEN-MNT-RUI-01';
-  }
-
-  if (pathname.startsWith(APP_ROUTES.mantenimiento.root)) {
-    return 'SCREEN-MNT-HVAC-01';
-  }
-
-  return 'SCREEN-GXP-OPS-01';
+  return resolveInterfaceIdentifier(pathname);
 }
 
 function resolveAuditHash(pathname: string) {
@@ -165,22 +134,29 @@ function GxpMetadataStamp({
   pathname: string;
 }) {
   const isOperationalPath =
-    pathname.startsWith(APP_ROUTES.activos.master) ||
-    pathname.startsWith(APP_ROUTES.mantenimiento.root);
+    Boolean(resolveScreenId(pathname));
 
   if (!isOperationalPath) {
     return null;
   }
 
+  const interfaceIdentifier = resolveScreenId(pathname);
+
+  if (!interfaceIdentifier) {
+    return null;
+  }
+
   const tokenClass =
-    'font-mono text-xs text-slate-500 uppercase tracking-wider bg-slate-100 px-2 py-1 rounded border border-slate-200';
+    'cursor-text select-text font-mono text-xs text-slate-500 uppercase tracking-wider bg-slate-100 px-2 py-1 rounded border border-slate-200';
 
   return (
     <aside
       aria-label="GxP metadata stamp"
-      className="pointer-events-none fixed right-4 top-[76px] z-40 flex max-w-[calc(100vw-2rem)] flex-wrap justify-end gap-1.5"
+      className="pointer-events-auto fixed right-4 top-[92px] z-40 flex w-full max-w-[98vw] select-text flex-wrap justify-end gap-1.5 px-2 md:right-6 md:top-[88px] md:w-auto md:max-w-[calc(100vw-2rem)] md:px-0"
     >
-      <span className={tokenClass}>SCREEN_ID:{resolveScreenId(pathname)}</span>
+      <span className={tokenClass}>
+        {interfaceIdentifier.kind}:{interfaceIdentifier.value}
+      </span>
       <span className={tokenClass}>OPERATOR_ID:OP-{hashToken(currentUserEmail)}</span>
       <span className={tokenClass}>AUDIT_HASH:{resolveAuditHash(pathname)}</span>
     </aside>
@@ -313,6 +289,7 @@ export function AppShell({
   const isTechnicianProfile = isTechnicianRole(currentRole);
   const notificationRoleContext = resolveNotificationRoleContext(currentRole);
   const profileHref = `/admin/user/${resolveProfileRoleSlug(currentRole)}`;
+  const hasGxpMetadataStamp = Boolean(resolveInterfaceIdentifier(pathname));
   const profileContainerClass = isTechnicianProfile
     ? 'flex min-h-11 items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-blue-900 shadow-sm transition hover:border-blue-400 hover:bg-blue-100'
     : 'flex min-h-11 items-center gap-3 rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm transition hover:border-slate-300 hover:bg-slate-50';
@@ -437,7 +414,13 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden pt-20 print:pt-0">{children}</main>
+        <main
+          className={`min-w-0 flex-1 overflow-x-hidden print:pt-0 ${
+            hasGxpMetadataStamp ? 'pt-32 md:pt-32' : 'pt-20'
+          }`}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

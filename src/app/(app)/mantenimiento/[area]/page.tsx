@@ -2468,14 +2468,6 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
             </div>
 
             <div className="flex flex-col items-start gap-3 print:items-end">
-              <div className="flex w-full flex-wrap gap-2 md:w-auto md:max-w-[18rem] md:justify-end">
-                <span className="block rounded border border-slate-700 bg-slate-900 px-3 py-1 font-mono text-xs font-black uppercase tracking-wide text-slate-200">
-                  FORM_ID: FOR-MNT-HVAC-REV
-                </span>
-                <span className="block rounded border border-slate-700 bg-slate-900 px-3 py-1 font-mono text-xs font-black uppercase tracking-wide text-slate-200">
-                  SCREEN_ID: SCREEN-MNT-REV-01
-                </span>
-              </div>
               <div className="flex h-[120px] w-[120px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-600 print:bg-white print:text-black">
                 <QrCode size={42} />
                 <span className="mt-2 px-2 text-center text-[10px] leading-4">

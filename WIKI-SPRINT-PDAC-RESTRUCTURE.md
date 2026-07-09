@@ -527,3 +527,87 @@ The internal hierarchy is marked with `COMP-TECH-METADATA-BLOCK`, `COMP-TECH-PAR
 `FORM_ID: FOR-MNT-HVAC-REV` and `FORM_ID: FOR-MNT-HVAC-DASH` were realigned so visual lifecycle states cannot be inferred from the status string alone. The RUI review header now forces `PENDIENTE DE LLENADO - TÉCNICO` whenever the instrumental evidence set is incomplete or the technician signature token is absent, even if the persisted order status claims a signed state.
 
 The dashboard semaphore under `SUBSECTION_ID: SUB-HVAC-GRID-CONTAINER` now aggregates execution, review, sign-off, and deviation counters by evaluating actual `formularios_respuestas` cell contents together with supervisor, quality, and management signature timestamps. This closes the ALCOA+ gap where a work order with null parameters could previously pollute the QA/management counters.
+
+## 30. Development Reset Wizard Initialization
+
+`FORM_ID: FOR-ADM-RESET-WIZARD` / `SCREEN_ID: SCREEN-ADM-RESET-01` introduces the development-only reset console at `/admin/mantenimiento/reset` for branch `feature/gxp-reset-wizard-initialization`. The page preserves the regulated shell `w-full max-w-[98vw] mx-auto px-4 lg:px-6 py-6`, exposes `COMP-ADM-PURGE-TRIGGER` only in `NODE_ENV=development`, and routes destructive execution through server actions rather than client-side database access.
+
+The flow `SUB-ADM-WIZARD-FLOW` contains `COMP-WIZARD-STEP-ROLES`, `COMP-WIZARD-STEP-ASSETS`, and `COMP-WIZARD-STEP-ORDER`. The seed path creates baseline roles with development PIN metadata, inserts HVAC-01/HVAC-02/HVAC-03 as `Operativo` / `APROBADO` / `version = 1`, and generates a clean HVAC-03 RUI with NULL instrumental parameters so the dashboard semaphore yields `Técnico = 1`. All inputs and action targets preserve the 48px tactile rule through `h-12`.
+
+## 31. Dynamic Feature Tables Synchronization
+
+The reset wizard server actions now recognize the dynamic feature schema created in Supabase: `caracteristicas_maestras` and `valores_caracteristicas`. The purge order removes `valores_caracteristicas` before `caracteristicas_maestras`, `ordenes_mantenimiento`, and `activos` to preserve relational cleanup semantics during development resets.
+
+`src/types/gxp-features.types.ts` defines `MasterFeature` and `FeatureValue` for direct table mapping. Step 2 keeps the asset seed aligned to canonical columns `asset_code`, `asset_name`, `area`, `version`, `status`, and `status_gxp`; Step 3 preloads dynamic master features such as `Presion_Diferencial`, `Temperatura_Ambiente`, and `Humedad_Relativa` before generating the clean HVAC-03 work order.
+
+## 32. Dashboard View Latch And Compiled Schema Coupling
+
+`FORM_ID: FOR-MNT-HVAC-DASH` now reads the optimized Supabase view `view_hvac_dashboard_cards` directly instead of reconstructing card metrics from base tables in application code. The card contract maps `total_orders`, `tecnico_pending_count`, and `qa_prod_review_count` from the view into the existing visual semaphore while preserving the `SUBSECTION_ID: SUB-HVAC-GRID-CONTAINER` layout boundary.
+
+The reset wizard purge contract was tightened to the compiled dynamic schema order: `valores_caracteristicas`, `caracteristicas_maestras`, `firmas_ordenes`, `ordenes_mantenimiento`, and `activos`. The initial HVAC-03 seed now creates the work order in `ordenes_mantenimiento` and inserts NULL dynamic values into `valores_caracteristicas` using the RUI as `order_id`.
+
+## 33. Cierre Calificado Del Sprint PDAC / HVAC Reset Wizard
+
+**Documento:** `WIKI-SPRINT-PDAC-RESTRUCTURE.md`  
+**Estado:** Calificado / Guardado en Rama `feature/gxp-reset-wizard-initialization`  
+**Normativa de Referencia:** FDA 21 CFR Part 11 / ALCOA+ Data Integrity
+
+### 1. Problema De Origen Detectado: El Cortocircuito
+
+Durante las pruebas de control de estados en el activo `HVAC-03`, específicamente sobre el RUI `73cca0e2-4fe3-43f1-808a-fb4171594f2a`, el sistema presentó una incongruencia severa entre datos visuales, estados derivados y evidencia transaccional.
+
+El cartel textual indicaba `PENDIENTE DE LLENADO - TÉCNICO`, mientras que el badge transaccional mostraba `CERRADO`. En paralelo, la línea de tiempo inferior de firmas mostraba aprobaciones válidas para Técnico, Supervisor y Calidad, dejando el documento bloqueado a nivel de Gerencia.
+
+El diagnóstico GxP determinó que el backend no estaba ejecutando una mutación atómica del estado descriptivo visible al momento de guardar parámetros o procesar firmas digitales. Como resultado, el sistema arrastraba textos obsoletos de fases anteriores y la base de datos retenía pruebas cruzadas redundantes.
+
+### 2. Arquitectura Base De Datos Implementada
+
+Para resolver relaciones huérfanas y preparar la escalabilidad regulada del laboratorio, Supabase/PostgreSQL quedó alineado con un esquema unificado de cinco tablas core y dos vistas inteligentes de lectura bajo RLS.
+
+**Tablas Físicas Core**
+
+- `public.activos`: maestro inmutable de equipos de planta. Almacena códigos, áreas y la versión documental aprobada por QA.
+- `public.ordenes_mantenimiento`: entidad transaccional del flujo. Origina los RUIs UUID rastreables desde la URL del navegador.
+- `public.firmas_ordenes`: aduana inmutable de auditoría 21 CFR Part 11. Registra `usuario_email`, `rol_firma`, `sign_timestamp` y token criptográfico de firma.
+- `public.caracteristicas_maestras`: catálogo flexible y versionado de variables críticas como presión diferencial, temperatura y humedad.
+- `public.valores_caracteristicas`: almacén dinámico de resultados capturados en campo desde tablets industriales bajo regla táctil de 48px.
+
+**Vistas De Agregación**
+
+- `public.view_hvac_dashboard_cards`: vista ejecutada con `WITH (security_invoker = true)` para respetar RLS de tablas base. Calcula `total_orders`, `tecnico_pending_count` y `qa_prod_review_count` desde el motor SQL.
+- `public.view_hvac_order_parameters`: vista de parámetros dinámicos de la hoja de trabajo activa, preparada para alimentar bucles de formulario en Next.js sin columnas rígidas.
+
+### 3. Módulo De Inicialización Configurado
+
+La consola de administración quedó expuesta en `/admin/mantenimiento/reset` bajo:
+
+- `FORM_ID: FOR-ADM-RESET-WIZARD`
+- `SCREEN_ID: SCREEN-ADM-RESET-01`
+
+El módulo integra `COMP-ADM-PURGE-TRIGGER`, visible únicamente cuando `process.env.NODE_ENV === 'development'`, y el flujo secuencial `SUB-ADM-WIZARD-FLOW` para poblar roles, activos y la orden piloto.
+
+En `src/modules/admin/actions/reset-wizard.actions.ts`, la purga de desarrollo respeta el orden relacional:
+
+1. `valores_caracteristicas`
+2. `caracteristicas_maestras`
+3. `firmas_ordenes`
+4. `ordenes_mantenimiento`
+5. `activos`
+
+El seed inicializa `HVAC-01`, `HVAC-02` y `HVAC-03` con `status = Operativo`, `status_gxp = APROBADO` y `version = 1`. También carga el diccionario dinámico base y genera una orden limpia para `HVAC-03` con parámetros NULL, garantizando que el dashboard refleje `Técnico = 1`.
+
+### 4. Estado De Validación Y Compilación
+
+El validador estricto del proyecto fue ejecutado localmente:
+
+```bash
+npm run typecheck
+```
+
+Resultado:
+
+```text
+0 errores TypeScript
+```
+
+Esto confirma que los Server Actions, las interfaces `MasterFeature` y `FeatureValue`, el latch hacia `view_hvac_dashboard_cards`, la inicialización dinámica de características y la interfaz táctil del Reset Wizard se encuentran acoplados y tipados sin brechas de compilación.
