@@ -18,6 +18,7 @@ type AppShellProps = {
   children: React.ReactNode;
   currentCapabilities?: {
     can_approve?: boolean;
+    can_audit?: boolean;
     can_create_assets?: boolean;
   };
   currentNotifications?: NotificationItem[];

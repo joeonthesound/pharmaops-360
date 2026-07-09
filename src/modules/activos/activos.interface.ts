@@ -25,6 +25,9 @@ export interface Activo {
   next_maintenance_date: string | null;
   internal_responsible: string | null;
   technical_provider: string | null;
+  version: number;
+  status_gxp: 'EVALUACIÓN' | 'APROBADO' | 'RECHAZADO';
+  image_url: string | null;
   qr_possible: boolean;
   notes: string;
   asset_reference_image_url?: string | null;

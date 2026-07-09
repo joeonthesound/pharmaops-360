@@ -25,7 +25,18 @@ Campos usados:
 - `site`
 - `location_detail`
 - `status`
+- `version`
+- `status_gxp`
+- `image_url`
 - `next_maintenance_date`
+
+Checkpoint PDAC activo:
+
+- `version`: `int not null default 1`; cuenta la iteracion activa de control de cambios.
+- `status_gxp`: `varchar not null default 'APROBADO'`; restringido a `EVALUACIÓN`, `APROBADO`, `RECHAZADO`.
+- `image_url`: `text null`; referencia la imagen versionada en el bucket `evidencias-activos`.
+
+Toda consulta para `FORM_ID: FOR-PDAC-REV` debe seleccionar estos campos desde Supabase. No se permiten mocks, aproximaciones de UI ni valores hardcodeados.
 
 ### `mantenimientos_registros`
 
@@ -193,6 +204,7 @@ Bucket:
 
 ```txt
 evidencias-mantenimiento
+evidencias-activos
 ```
 
 ## Relaciones Logicas
@@ -207,3 +219,4 @@ evidencias-mantenimiento
 - [Crear Ordenes y Plantillas Dinamicas](./06-crear-ordenes-plantillas.md)
 - [Firma Electronica, Desvios y Auditoria](./07-firma-electronica-desvios-auditoria.md)
 - [Supabase: Definicion y Replicacion de Base de Datos](./12-supabase-replicacion-db.md)
+- [Control de Cambios de Activos PDAC](./16-control-cambios-activos-pdac.md)

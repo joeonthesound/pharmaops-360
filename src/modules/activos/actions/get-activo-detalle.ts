@@ -25,6 +25,9 @@ type ActivoDetalleRow = {
   next_maintenance_date: string | null;
   internal_responsible: string | null;
   technical_provider: string | null;
+  version: number;
+  status_gxp: 'EVALUACIÓN' | 'APROBADO' | 'RECHAZADO';
+  image_url: string | null;
   imagen_url?: string | null;
 };
 
@@ -105,10 +108,12 @@ export type ActivoDetallePayload = {
 const ROOT_SUPERUSER_EMAILS = ['josueth.acevedo@gmail.com'];
 const FUNCTIONAL_ADMIN_EMAILS = ['albis@labymed.com'];
 const ACTIVO_SELECT =
-  'id, uuid, asset_code, asset_name, asset_type, site, area, location_detail, brand, model, serial_number, capacity, capacity_unit, installation_date, status, maintenance_frequency, last_maintenance_date, next_maintenance_date, internal_responsible, technical_provider';
+  'id, uuid, asset_code, asset_name, asset_type, site, area, location_detail, brand, model, serial_number, capacity, capacity_unit, installation_date, status, maintenance_frequency, last_maintenance_date, next_maintenance_date, internal_responsible, technical_provider, version, status_gxp, image_url';
 const MANTENIMIENTO_SELECT =
   'id, uuid, record_code, asset_code, template_code, assigned_technician, scheduled_date, executed_at, status, notes, supervisor_signed_by, supervisor_signed_at, quality_signed_by, quality_signed_at, rejection_comments';
 const EVIDENCE_BUCKET = 'evidencias-mantenimiento';
+const ASSET_EVIDENCE_BUCKET = 'evidencias-mantenimiento';
+const ASSET_EVIDENCE_PREFIX = 'activos';
 const VIRTUAL_EVIDENCE_FIELD_KEY = 'evidencias_hvac';
 
 function normalizeEmail(value: string | null | undefined) {
@@ -218,6 +223,111 @@ function normalizeEvidenceUrl(value: string) {
   return publicSupabase.storage.from(EVIDENCE_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
+function cleanAssetStoragePath(value: string | null | undefined) {
+  const trimmedValue = String(value ?? '').trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(trimmedValue)) {
+    try {
+      const url = new URL(trimmedValue);
+      const publicStorageMarker = `/storage/v1/object/public/${ASSET_EVIDENCE_BUCKET}/`;
+      const markerIndex = url.pathname.indexOf(publicStorageMarker);
+
+      if (markerIndex >= 0) {
+        return url.pathname.slice(markerIndex + publicStorageMarker.length);
+      }
+    } catch {
+      return trimmedValue;
+    }
+
+    return trimmedValue;
+  }
+
+  const publicStorageMarker = `/storage/v1/object/public/${ASSET_EVIDENCE_BUCKET}/`;
+  const markerIndex = trimmedValue.indexOf(publicStorageMarker);
+  const rawPath =
+    markerIndex >= 0
+      ? trimmedValue.slice(markerIndex + publicStorageMarker.length)
+      : trimmedValue;
+
+  return rawPath
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((part) => part && part !== ASSET_EVIDENCE_BUCKET)
+    .join('/');
+}
+
+function resolveAssetStoragePath(value: string | null | undefined) {
+  const cleanPath = cleanAssetStoragePath(value);
+
+  if (!cleanPath) {
+    return null;
+  }
+
+  if (cleanPath === ASSET_EVIDENCE_PREFIX || cleanPath.startsWith(`${ASSET_EVIDENCE_PREFIX}/`)) {
+    return cleanPath;
+  }
+
+  return `${ASSET_EVIDENCE_PREFIX}/${cleanPath}`;
+}
+
+function resolveAssetImagePublicUrl(
+  client: SupabaseReadableClient,
+  value: string | null | undefined,
+  assetCode?: string | null,
+) {
+  const trimmedValue = String(value ?? '').trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(trimmedValue) && !trimmedValue.includes('/storage/v1/object/')) {
+    return trimmedValue;
+  }
+
+  const cleanPath = cleanAssetStoragePath(trimmedValue);
+  const storagePath = resolveAssetStoragePath(trimmedValue);
+
+  if (!cleanPath || !storagePath) {
+    return null;
+  }
+
+  if (process.env.ENABLE_SUPERADMIN_DEBUG_LOGS === 'true') {
+    console.log('[PDAC MASTER IMAGE URL RESOLUTION]', {
+      bucket: ASSET_EVIDENCE_BUCKET,
+      raw: trimmedValue,
+      cleanPath,
+      storagePath,
+    });
+  }
+
+  console.log('=========================================================================');
+  console.log('[GxP STORAGE ADUANA — RAW DB ROW]');
+  console.log('ASSET CODE:', assetCode);
+  console.log('RAW IMAGE_URL FROM DB:', value);
+  console.log('=========================================================================');
+
+  try {
+    const { data: urlData } = client.storage
+      .from(ASSET_EVIDENCE_BUCKET)
+      .getPublicUrl(storagePath);
+
+    console.log('=========================================================================');
+    console.log('[GxP STORAGE ADUANA — SUPABASE RESOLUTION]');
+    console.log('GENERATED PUBLIC URL LINK:', urlData?.publicUrl);
+    console.log('=========================================================================');
+
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error('[GxP STORAGE PIPELINE CRITICAL EXCEPTION]:', error);
+    return null;
+  }
+}
+
 function isEvidenceField(row: FormularioRespuestaEvidenciaRow) {
   const fieldMeta = Array.isArray(row.formularios_campos)
     ? row.formularios_campos[0]
@@ -245,8 +355,8 @@ function isEvidenceField(row: FormularioRespuestaEvidenciaRow) {
 
 async function queryActivoBy(
   client: SupabaseReadableClient,
-  column: 'uuid' | 'asset_code',
-  value: string,
+  column: 'id' | 'uuid' | 'asset_code',
+  value: number | string,
 ) {
   const result = await client
     .from('activos')
@@ -256,13 +366,72 @@ async function queryActivoBy(
 
   return {
     data: result.data
-      ? {
-          ...result.data,
-          imagen_url: null,
-        }
+      ? (() => {
+          const imageUrl = resolveAssetImagePublicUrl(
+            client,
+            result.data.image_url,
+            result.data.asset_code,
+          );
+
+          return {
+            ...result.data,
+            image_url: imageUrl,
+            imagen_url: imageUrl,
+          };
+        })()
       : null,
     error: result.error,
   };
+}
+
+function isUuidCandidate(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function isNumericDatabaseKey(value: string) {
+  return /^\d+$/.test(value);
+}
+
+function isHumanAssetTag(value: string) {
+  return /[a-z]/i.test(value);
+}
+
+export async function getAssetIdByTag(assetTag: string): Promise<number | null> {
+  const normalizedAssetTag = assetTag.trim().toUpperCase();
+
+  if (!normalizedAssetTag) {
+    return null;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('activos')
+    .select('id')
+    .eq('asset_code', normalizedAssetTag)
+    .maybeSingle();
+
+  if (!error && typeof data?.id === 'number') {
+    return data.id;
+  }
+
+  const { data: publicData, error: publicError } = await publicSupabase
+    .from('activos')
+    .select('id')
+    .eq('asset_code', normalizedAssetTag)
+    .maybeSingle();
+
+  if (error || publicError) {
+    console.error('[DATA INTEGRITY CHECK] Error resolviendo asset_code a asset_id BIGINT', {
+      assetTag: normalizedAssetTag,
+      code: error?.code ?? publicError?.code,
+      message: error?.message ?? publicError?.message,
+      hint: error?.hint ?? publicError?.hint,
+    });
+  }
+
+  return typeof publicData?.id === 'number' ? publicData.id : null;
 }
 
 async function fetchActivoByIdentifier(
@@ -271,16 +440,62 @@ async function fetchActivoByIdentifier(
 ) {
   const normalizedActivoId = activoId.trim();
 
-  const { data: activoByUuid, error: uuidError } = await queryActivoBy(
-    supabase,
-    'uuid',
-    normalizedActivoId,
-  );
+  if (isNumericDatabaseKey(normalizedActivoId)) {
+    const { data: activoById, error: idError } = await queryActivoBy(
+      supabase,
+      'id',
+      Number(normalizedActivoId),
+    );
 
-  if (activoByUuid || uuidError) {
+    if (activoById) {
+      return {
+        data: activoById,
+        error: null,
+      };
+    }
+
+    const { data: publicActivoById, error: publicIdError } = await queryActivoBy(
+      publicSupabase,
+      'id',
+      Number(normalizedActivoId),
+    );
+
     return {
-      data: activoByUuid,
-      error: uuidError,
+      data: publicActivoById,
+      error: publicIdError ?? idError,
+    };
+  }
+
+  if (isUuidCandidate(normalizedActivoId)) {
+    const { data: activoByUuid, error: uuidError } = await queryActivoBy(
+      supabase,
+      'uuid',
+      normalizedActivoId,
+    );
+
+    if (activoByUuid) {
+      return {
+        data: activoByUuid,
+        error: null,
+      };
+    }
+
+    const { data: publicActivoByUuid, error: publicUuidError } = await queryActivoBy(
+      publicSupabase,
+      'uuid',
+      normalizedActivoId,
+    );
+
+    return {
+      data: publicActivoByUuid,
+      error: publicUuidError ?? uuidError,
+    };
+  }
+
+  if (!isHumanAssetTag(normalizedActivoId)) {
+    return {
+      data: null,
+      error: null,
     };
   }
 
@@ -290,27 +505,23 @@ async function fetchActivoByIdentifier(
     normalizedActivoId.toUpperCase(),
   );
 
-  if (activoByCode || assetCodeError) {
+  if (activoByCode) {
     return {
       data: activoByCode,
-      error: assetCodeError,
+      error: null,
     };
   }
 
-  const { data: publicActivoByUuid, error: publicUuidError } = await queryActivoBy(
+  const { data: publicActivoByCode, error: publicAssetCodeError } = await queryActivoBy(
     publicSupabase,
-    'uuid',
-    normalizedActivoId,
+    'asset_code',
+    normalizedActivoId.toUpperCase(),
   );
 
-  if (publicActivoByUuid || publicUuidError) {
-    return {
-      data: publicActivoByUuid,
-      error: publicUuidError,
-    };
-  }
-
-  return queryActivoBy(publicSupabase, 'asset_code', normalizedActivoId.toUpperCase());
+  return {
+    data: publicActivoByCode,
+    error: publicAssetCodeError ?? assetCodeError,
+  };
 }
 
 async function fetchMantenimientosByAssetCode(

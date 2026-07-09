@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   FileText,
   Gauge,
+  PencilLine,
   ShieldCheck,
   TrendingUp,
 } from 'lucide-react';
@@ -517,11 +518,11 @@ export default async function ActivoHvacDetallePage({
               <h1 className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-3xl font-black tracking-normal text-slate-950 md:text-5xl">
                 <span>{assetDisplayName}</span>
                 <span className="font-mono text-indigo-700">{activo.asset_code}</span>
+                <span className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-700">
+                  Rev. {activo.version}
+                </span>
               </h1>
             </div>
-            <span className="inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-900">
-              Rol: Administrador Calificado
-            </span>
           </div>
 
           <div className="flex flex-col gap-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-emerald-950 md:flex-row md:items-center md:justify-between">
@@ -544,7 +545,11 @@ export default async function ActivoHvacDetallePage({
 
         <section className="mx-auto grid w-full max-w-[98vw] grid-cols-1 items-start gap-6 lg:grid-cols-12">
           <div className="lg:col-span-3">
-            <AssetImageDialog assetCode={activo.asset_code} imageUrl={activo.imagen_url} />
+            <AssetImageDialog
+              assetCode={activo.asset_code}
+              imageUrl={activo.image_url}
+              version={activo.version}
+            />
           </div>
 
           <section className="rounded-lg border border-slate-200 border-t-4 border-t-indigo-600 bg-white p-5 shadow-sm lg:col-span-6">
@@ -565,6 +570,24 @@ export default async function ActivoHvacDetallePage({
           </section>
 
           <aside className="grid content-start gap-4 lg:col-span-3">
+            <section className="rounded-lg border border-slate-200 border-t-4 border-t-blue-600 bg-white p-4 shadow-sm">
+              <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-3">
+                <p className="text-[11px] font-black uppercase tracking-wide text-blue-700">
+                  Gobernanza
+                </p>
+                <p className="mt-1 text-sm font-black text-blue-950">
+                  Rol: Administrador Calificado
+                </p>
+              </div>
+              <Link
+                className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-indigo-700 bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:border-indigo-800 hover:bg-indigo-800"
+                href={`/activos/hvac/ver/${encodeURIComponent(activo.asset_code)}/control-cambios`}
+              >
+                <PencilLine aria-hidden="true" className="h-4 w-4 shrink-0" />
+                Control de Cambios
+              </Link>
+            </section>
+
             <section className="rounded-lg border border-slate-200 border-t-4 border-t-amber-500 bg-white p-4 shadow-sm">
               <div className="flex items-center gap-2">
                 <CheckCircle2 aria-hidden="true" className="text-amber-700" size={18} />

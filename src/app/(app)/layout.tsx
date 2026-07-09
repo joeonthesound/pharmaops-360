@@ -18,6 +18,7 @@ type UsuarioRolRow = {
 
 type CurrentUserContext = {
   canApprove: boolean;
+  canAudit: boolean;
   canCreateAssets: boolean;
   email: string;
   fullName: string;
@@ -76,6 +77,23 @@ function isTemporalProfileExpired(role: string | null, notes: string | null) {
   }
 
   return expiresAt.getTime() <= Date.now();
+}
+
+function isAuditTierRole(role: string | null | undefined) {
+  const normalizedRole = String(role ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+  return (
+    normalizedRole.includes('calidad') ||
+    normalizedRole.includes('quality') ||
+    normalizedRole.includes('qa') ||
+    normalizedRole.includes('supervisor') ||
+    normalizedRole.includes('auditor') ||
+    normalizedRole.includes('superadmin')
+  );
 }
 
 async function resolveCurrentUserContext(): Promise<CurrentUserContext | null> {
@@ -137,6 +155,7 @@ async function resolveCurrentUserContext(): Promise<CurrentUserContext | null> {
 
   return {
     canApprove: profiles.some((item) => item.can_approve === true),
+    canAudit: profiles.some((item) => isAuditTierRole(item.role)),
     canCreateAssets: profiles.some((item) => item.can_create_assets === true),
     email,
     fullName: profile.full_name?.trim() || email,
@@ -155,6 +174,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     <AppShell
       currentCapabilities={{
         can_approve: currentUser.canApprove,
+        can_audit: currentUser.canAudit,
         can_create_assets: currentUser.canCreateAssets,
       }}
       currentRole={currentUser.role}

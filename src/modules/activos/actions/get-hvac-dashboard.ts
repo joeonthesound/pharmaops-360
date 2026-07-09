@@ -17,6 +17,9 @@ type HvacAssetRow = {
   installation_date: string | null;
   last_maintenance_date: string | null;
   next_maintenance_date: string | null;
+  internal_responsible: string | null;
+  version: number | null;
+  status_gxp: 'EVALUACIÓN' | 'APROBADO' | 'RECHAZADO' | null;
 };
 
 type MantenimientoRegistroRow = {
@@ -25,6 +28,12 @@ type MantenimientoRegistroRow = {
   status: string | null;
   scheduled_date: string | null;
   executed_at: string | null;
+  supervisor_signed_at: string | null;
+  supervisor_signed_by: string | null;
+  quality_signed_at: string | null;
+  quality_signed_by: string | null;
+  management_signed_at: string | null;
+  management_signed_by: string | null;
 };
 
 type FormularioRespuestaRow = {
@@ -58,6 +67,13 @@ type HvacDashboardAsset = HvacAssetRow & {
   primaryFilterModel: string | null;
   deltaPStatus: HealthStatus;
   maintenanceCount: number;
+  total_orders: number;
+  pending_orders: number;
+  rejected_orders: number;
+  orders_in_execution: number;
+  orders_in_review: number;
+  orders_in_signoff: number;
+  orders_rejected: number;
 };
 
 type HvacDashboardCounters = {
@@ -75,7 +91,7 @@ export type HvacDashboardPayload = {
 };
 
 const HVAC_ACTIVOS_SELECT =
-  'uuid, asset_code, asset_name, status, asset_type, area, site, brand, model, location_detail, installation_date, last_maintenance_date, next_maintenance_date';
+  'uuid, asset_code, asset_name, status, asset_type, area, site, brand, model, location_detail, installation_date, last_maintenance_date, next_maintenance_date, internal_responsible, version, status_gxp';
 
 function getMaintenanceSortValue(row: MantenimientoRegistroRow) {
   const candidateDate = row.executed_at ?? row.scheduled_date;
@@ -163,6 +179,94 @@ function getLatestMaintenance(rows: MantenimientoRegistroRow[]) {
   })[0];
 }
 
+function isPendingMaintenanceStatus(status: string | null | undefined) {
+  const normalizedStatus = String(status ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+  return (
+    normalizedStatus.includes('pendiente') ||
+    normalizedStatus.includes('revision') ||
+    normalizedStatus.includes('programado') ||
+    normalizedStatus.includes('scheduled')
+  );
+}
+
+function isRejectedMaintenanceStatus(status: string | null | undefined) {
+  const normalizedStatus = String(status ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+  return (
+    normalizedStatus.includes('rechazado') ||
+    normalizedStatus.includes('desviacion') ||
+    normalizedStatus.includes('rejected')
+  );
+}
+
+function isTerminalMaintenanceStatus(status: string | null | undefined) {
+  const normalizedStatus = String(status ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+  return (
+    normalizedStatus === 'approved' ||
+    normalizedStatus === 'closed' ||
+    normalizedStatus.includes('cerrado') ||
+    normalizedStatus.includes('aprobado')
+  );
+}
+
+function hasSupervisorSignature(row: MantenimientoRegistroRow) {
+  return Boolean(row.supervisor_signed_at || row.supervisor_signed_by);
+}
+
+function hasQualitySignature(row: MantenimientoRegistroRow) {
+  return Boolean(row.quality_signed_at || row.quality_signed_by);
+}
+
+function hasManagementSignature(row: MantenimientoRegistroRow) {
+  return Boolean(row.management_signed_at || row.management_signed_by);
+}
+
+function isOrderInExecution(row: MantenimientoRegistroRow, rows: FormularioRespuestaRow[]) {
+  return (
+    !isRejectedMaintenanceStatus(row.status) &&
+    !isTerminalMaintenanceStatus(row.status) &&
+    !hasRequiredInstrumentation(rows)
+  );
+}
+
+function isOrderInReview(row: MantenimientoRegistroRow, rows: FormularioRespuestaRow[]) {
+  const hasInstrumentation = hasRequiredInstrumentation(rows);
+
+  return (
+    !isRejectedMaintenanceStatus(row.status) &&
+    !isTerminalMaintenanceStatus(row.status) &&
+    hasInstrumentation &&
+    (!hasSupervisorSignature(row) || !hasQualitySignature(row))
+  );
+}
+
+function isOrderInSignoff(row: MantenimientoRegistroRow, rows: FormularioRespuestaRow[]) {
+  const hasInstrumentation = hasRequiredInstrumentation(rows);
+
+  return (
+    !isRejectedMaintenanceStatus(row.status) &&
+    !isTerminalMaintenanceStatus(row.status) &&
+    hasInstrumentation &&
+    hasSupervisorSignature(row) &&
+    hasQualitySignature(row) &&
+    !hasManagementSignature(row)
+  );
+}
+
 function groupRespuestasByMaintenanceId(rows: FormularioRespuestaRow[]) {
   return rows.reduce<Map<number, FormularioRespuestaRow[]>>((acc, row) => {
     if (typeof row.mantenimiento_id !== 'number') {
@@ -198,15 +302,64 @@ function getRespuestaValue(row: FormularioRespuestaRow) {
   return null;
 }
 
+function normalizeSearchableText(value: string | null | undefined) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function hasRespuestaValue(row: FormularioRespuestaRow) {
+  if (row.valor_numerico !== null) {
+    return true;
+  }
+
+  if (typeof row.valor_texto === 'string' && row.valor_texto.trim()) {
+    return true;
+  }
+
+  return typeof row.valor_seleccion === 'string' && row.valor_seleccion.trim().length > 0;
+}
+
+function hasInstrumentalParameter(rows: FormularioRespuestaRow[], patterns: string[]) {
+  const normalizedPatterns = patterns.map((pattern) => normalizeSearchableText(pattern));
+
+  return rows.some((row) => {
+    const fieldMeta = getFormularioCampo(row);
+    const searchableText = normalizeSearchableText(
+      `${fieldMeta?.field_key ?? ''} ${fieldMeta?.field_label ?? ''}`,
+    );
+
+    return (
+      normalizedPatterns.some((pattern) => searchableText.includes(pattern)) &&
+      hasRespuestaValue(row)
+    );
+  });
+}
+
+function hasRequiredInstrumentation(rows: FormularioRespuestaRow[]) {
+  return (
+    hasInstrumentalParameter(rows, ['temperatura', 'temperature', 'temp']) &&
+    hasInstrumentalParameter(rows, [
+      'presion diferencial',
+      'presion',
+      'pressure',
+      'diferencial',
+      'succion',
+    ]) &&
+    hasInstrumentalParameter(rows, ['humedad', 'humidity', 'relative humidity', 'rh'])
+  );
+}
+
 function findRespuestaValue(rows: FormularioRespuestaRow[], patterns: string[]) {
-  const normalizedPatterns = patterns.map((pattern) => pattern.toLowerCase());
+  const normalizedPatterns = patterns.map((pattern) => normalizeSearchableText(pattern));
 
   for (const row of rows) {
     const fieldMeta = getFormularioCampo(row);
-    const searchableText = `${fieldMeta?.field_key ?? ''} ${fieldMeta?.field_label ?? ''}`
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase();
+    const searchableText = normalizeSearchableText(
+      `${fieldMeta?.field_key ?? ''} ${fieldMeta?.field_label ?? ''}`,
+    );
 
     if (normalizedPatterns.some((pattern) => searchableText.includes(pattern))) {
       const value = getRespuestaValue(row);
@@ -258,7 +411,9 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
       .range(0, 8),
     supabase
       .from('mantenimientos_registros')
-      .select('id, asset_code, status, scheduled_date, executed_at'),
+      .select(
+        'id, asset_code, status, scheduled_date, executed_at, supervisor_signed_at, supervisor_signed_by, quality_signed_at, quality_signed_by, management_signed_at, management_signed_by',
+      ),
     supabase
       .from('formularios_respuestas')
       .select(
@@ -329,6 +484,8 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
       'presion diferencial',
       'diferencial',
     ]);
+    const getMaintenanceResponses = (row: MantenimientoRegistroRow) =>
+      respuestasByMaintenanceId.get(row.id) ?? [];
 
     return {
       ...asset,
@@ -341,6 +498,22 @@ export async function getHvacDashboard(): Promise<HvacDashboardPayload> {
       primaryFilterModel,
       deltaPStatus: getDeltaPStatus(deltaPValue, healthStatus),
       maintenanceCount: assetMantenimientos.length,
+      total_orders: assetMantenimientos.length,
+      pending_orders: assetMantenimientos.filter((row) => isPendingMaintenanceStatus(row.status))
+        .length,
+      rejected_orders: assetMantenimientos.filter((row) => isRejectedMaintenanceStatus(row.status))
+        .length,
+      orders_in_execution: assetMantenimientos.filter((row) =>
+        isOrderInExecution(row, getMaintenanceResponses(row)),
+      ).length,
+      orders_in_review: assetMantenimientos.filter((row) =>
+        isOrderInReview(row, getMaintenanceResponses(row)),
+      ).length,
+      orders_in_signoff: assetMantenimientos.filter((row) =>
+        isOrderInSignoff(row, getMaintenanceResponses(row)),
+      ).length,
+      orders_rejected: assetMantenimientos.filter((row) => isRejectedMaintenanceStatus(row.status))
+        .length,
     };
   });
 

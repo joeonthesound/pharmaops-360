@@ -809,6 +809,39 @@ function hasAnyValue(respuesta: RespuestaAuditada) {
   );
 }
 
+function normalizeFieldSearchText(value: string | null | undefined) {
+  return normalizeUtf8String(value).toLowerCase();
+}
+
+function hasInstrumentalResponse(respuestas: RespuestaAuditada[], patterns: string[]) {
+  const normalizedPatterns = patterns.map((pattern) => normalizeFieldSearchText(pattern));
+
+  return respuestas.some((respuesta) => {
+    const searchableText = normalizeFieldSearchText(
+      `${respuesta.field_key ?? ''} ${respuesta.field_label ?? ''}`,
+    );
+
+    return (
+      normalizedPatterns.some((pattern) => searchableText.includes(pattern)) &&
+      hasAnyValue(respuesta)
+    );
+  });
+}
+
+function hasRequiredInstrumentationResponses(respuestas: RespuestaAuditada[]) {
+  return (
+    hasInstrumentalResponse(respuestas, ['temperatura', 'temperature', 'temp']) &&
+    hasInstrumentalResponse(respuestas, [
+      'presion diferencial',
+      'presion',
+      'pressure',
+      'diferencial',
+      'succion',
+    ]) &&
+    hasInstrumentalResponse(respuestas, ['humedad', 'humidity', 'relative humidity', 'rh'])
+  );
+}
+
 function isEvidenceValue(respuesta: RespuestaAuditada) {
   const fieldType = String(respuesta.field_type ?? '').toLowerCase();
   const textValue = respuesta.valor_texto ?? '';
@@ -1768,6 +1801,17 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
     maintenanceRecord?.rejection_comments ||
     '';
   const statusBanner = resolveStatusBanner(normalizedStatus);
+  const hasCompleteInstrumentation = hasRequiredInstrumentationResponses(orderedResponses);
+  const hasValidTechnicianSignature = Boolean(
+    maintenanceRecord?.executed_at && maintenanceRecord?.assigned_technician,
+  );
+  const effectiveStatusBanner =
+    hasCompleteInstrumentation && hasValidTechnicianSignature
+      ? statusBanner
+      : {
+          className: 'border-amber-200 bg-amber-50 text-amber-900',
+          text: 'PENDIENTE DE LLENADO - TÉCNICO',
+        };
   const isManualFormMode = isManualFormLifecycleStatus(normalizedStatus);
   const isReadOnlyDocument = !isManualFormMode;
   const editableInitialResponses = buildEditableFieldResponses(orderedResponses);
@@ -1836,12 +1880,17 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
       rawRecordStatus === 'CLOSED' ||
       Boolean(maintenanceRecord?.management_signed_at);
     const statusPanelClass =
-      isTerminalClosedRecord
-        ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-        : 'border-amber-200 bg-amber-50 text-amber-900';
-    const statusPanelText = isTerminalClosedRecord
-      ? '🔐 REGISTRO CERRADO: Respaldo electrónico inmutable completado con éxito'
-      : statusBanner.text;
+      !hasCompleteInstrumentation || !hasValidTechnicianSignature
+        ? effectiveStatusBanner.className
+        : isTerminalClosedRecord
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+          : 'border-amber-200 bg-amber-50 text-amber-900';
+    const statusPanelText =
+      !hasCompleteInstrumentation || !hasValidTechnicianSignature
+        ? effectiveStatusBanner.text
+        : isTerminalClosedRecord
+          ? 'REGISTRO CERRADO: Respaldo electronico inmutable completado con exito'
+          : effectiveStatusBanner.text;
     const assetProfileHref = activoHVAC
       ? `/activos/hvac/ver/${activoHVAC.uuid ?? activoHVAC.asset_code}`
       : null;
@@ -2172,7 +2221,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
           </section>
         ) : null}
 
-        <div className="sticky top-0 z-20 mx-auto max-w-7xl bg-background/95 px-4 pt-6 pb-3 backdrop-blur print:hidden">
+        <div className="sticky top-0 z-20 mx-auto max-w-[98vw] bg-background/95 px-4 pt-6 pb-3 backdrop-blur print:hidden lg:px-6">
           <div className="mb-3 flex justify-end">
             <AuditLifecycleSheet
               assetMetadata={{
@@ -2186,13 +2235,16 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
               recordUuid={maintenanceRecord?.uuid ?? requestedUuid}
             />
           </div>
-          <ApprovalTimelineGraphic
-            isManagementSigned={Boolean(maintenanceRecord?.management_signed_at)}
-            status={normalizedStatus}
-          />
+          <div>
+            {/* SUBSECTION_ID: SUB-MNT-LIFECYCLE-TIMELINE */}
+            <ApprovalTimelineGraphic
+              isManagementSigned={Boolean(maintenanceRecord?.management_signed_at)}
+              status={normalizedStatus}
+            />
+          </div>
         </div>
 
-        <section className="grid grid-cols-1 lg:grid-cols-4 gap-6 max-w-7xl mx-auto px-4 pt-6 print:hidden">
+        <section className="grid grid-cols-1 lg:grid-cols-4 gap-6 w-full max-w-[98vw] mx-auto px-4 lg:px-6 pt-6 print:hidden">
           <div className="flex flex-col gap-4 lg:col-span-3">
             <section className="grid shrink-0 gap-2 rounded border border-slate-200 bg-white p-3 text-xs md:grid-cols-3">
               <div>
@@ -2342,7 +2394,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 print:bg-white print:px-0 print:py-0 print:text-black">
+    <main className="min-h-screen bg-slate-50 text-slate-950 print:bg-white print:px-0 print:py-0 print:text-black">
       <style>
         {`
           @media print {
@@ -2359,7 +2411,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         `}
       </style>
 
-      <section className="mx-auto flex w-full max-w-5xl flex-col gap-5 print:relative print:h-[10.3in] print:max-w-none print:overflow-hidden print:bg-white print:px-0 print:pb-[1.85in] print:pt-0 print:text-black">
+      <section className="w-full max-w-[98vw] mx-auto px-4 lg:px-6 py-6 flex flex-col gap-5 print:relative print:h-[10.3in] print:max-w-none print:overflow-hidden print:bg-white print:px-0 print:pb-[1.85in] print:pt-0 print:text-black">
         <div className="hidden items-center justify-between border-b border-slate-400 pb-1.5 text-[9px] leading-tight text-slate-700 print:flex">
           <div className="flex h-12 w-24 items-center justify-center border border-slate-400 text-[8px] font-semibold uppercase text-slate-700">
             Logo corporativo
@@ -2416,6 +2468,14 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
             </div>
 
             <div className="flex flex-col items-start gap-3 print:items-end">
+              <div className="flex w-full flex-wrap gap-2 md:w-auto md:max-w-[18rem] md:justify-end">
+                <span className="block rounded border border-slate-700 bg-slate-900 px-3 py-1 font-mono text-xs font-black uppercase tracking-wide text-slate-200">
+                  FORM_ID: FOR-MNT-HVAC-REV
+                </span>
+                <span className="block rounded border border-slate-700 bg-slate-900 px-3 py-1 font-mono text-xs font-black uppercase tracking-wide text-slate-200">
+                  SCREEN_ID: SCREEN-MNT-REV-01
+                </span>
+              </div>
               <div className="flex h-[120px] w-[120px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-600 print:bg-white print:text-black">
                 <QrCode size={42} />
                 <span className="mt-2 px-2 text-center text-[10px] leading-4">
@@ -2429,29 +2489,32 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
 
         <section className="print:hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <details className="group rounded-md border border-slate-200 bg-slate-50 open:bg-white" open>
-              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-900">
-                Ficha Tecnica de Referencia
-                <span className="text-xs font-bold text-slate-600 group-open:hidden">Expandir</span>
-                <span className="hidden text-xs font-bold text-slate-600 group-open:inline">Ocultar</span>
-              </summary>
-              <div className="grid gap-3 border-t border-slate-200 p-4 sm:grid-cols-2">
-                {[
-                  ['Marca', activoHVAC?.brand ?? 'No disponible'],
-                  ['Modelo', activoHVAC?.model ?? 'No disponible'],
-                  ['Numero de serie', activoHVAC?.serial_number ?? 'No disponible'],
-                  ['Proveedor tecnico', activoHVAC?.technical_provider ?? 'No disponible'],
-                  ...assetThresholds,
-                ].map(([label, value]) => (
-                  <div className="rounded-md border border-slate-200 bg-white px-3 py-2" key={label}>
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-600">
-                      {label}
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-slate-950">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </details>
+            <div>
+              {/* SUBSECTION_ID: SUB-MNT-REFERENCE-SPEC */}
+              <details className="group rounded-md border border-slate-200 bg-slate-50 open:bg-white" open>
+                <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-900">
+                  Ficha Tecnica de Referencia
+                  <span className="text-xs font-bold text-slate-600 group-open:hidden">Expandir</span>
+                  <span className="hidden text-xs font-bold text-slate-600 group-open:inline">Ocultar</span>
+                </summary>
+                <div className="grid gap-3 border-t border-slate-200 p-4 sm:grid-cols-2">
+                  {[
+                    ['Marca', activoHVAC?.brand ?? 'No disponible'],
+                    ['Modelo', activoHVAC?.model ?? 'No disponible'],
+                    ['Numero de serie', activoHVAC?.serial_number ?? 'No disponible'],
+                    ['Proveedor tecnico', activoHVAC?.technical_provider ?? 'No disponible'],
+                    ...assetThresholds,
+                  ].map(([label, value]) => (
+                    <div className="rounded-md border border-slate-200 bg-white px-3 py-2" key={label}>
+                      <p className="text-xs font-black uppercase tracking-wide text-slate-600">
+                        {label}
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-slate-950">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
 
             <div className="grid gap-3">
               <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-100">
@@ -2504,10 +2567,13 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
               recordUuid={maintenanceRecord?.uuid ?? requestedUuid}
             />
           </div>
-          <ApprovalTimelineGraphic
-            isManagementSigned={Boolean(maintenanceRecord?.management_signed_at)}
-            status={normalizedStatus}
-          />
+          <div>
+            {/* SUBSECTION_ID: SUB-MNT-LIFECYCLE-TIMELINE */}
+            <ApprovalTimelineGraphic
+              isManagementSigned={Boolean(maintenanceRecord?.management_signed_at)}
+              status={normalizedStatus}
+            />
+          </div>
         </div>
 
         {camposLookupError ? (
@@ -2523,8 +2589,8 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
         ) : null}
 
         {maintenanceRecord ? (
-          <div className={`print:hidden rounded-lg border p-4 text-sm font-medium ${statusBanner.className}`}>
-            {statusBanner.text}
+          <div className={`print:hidden rounded-lg border p-4 text-sm font-medium ${effectiveStatusBanner.className}`}>
+            {effectiveStatusBanner.text}
           </div>
         ) : null}
 
@@ -2569,7 +2635,7 @@ export default async function ChecklistInspeccionPage({ params }: ChecklistPageP
                   Plantilla: <strong>{normalizeUtf8String(notes.template_code ?? 'TMP-HVAC-PM')}</strong>
                 </span>
                 <span>
-                  Estado: <strong>{statusBanner.text}</strong>
+                  Estado: <strong>{effectiveStatusBanner.text}</strong>
                 </span>
               </div>
 

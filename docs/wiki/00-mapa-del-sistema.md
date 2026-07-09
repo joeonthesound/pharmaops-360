@@ -22,6 +22,7 @@ PharmaOps 360 es una plataforma Next.js/Supabase para gestion GxP de activos, ma
 | --- | --- | --- | --- |
 | IAM / Navegacion | `modules/common/components` | `modules/common/actions.ts` | `usuarios_roles`, `access_denied_logs` |
 | Activos | `app/(app)/activos` | `modules/activos/actions` | `activos`, `auditoria_log_cambios` |
+| Control de cambios PDAC | `app/(app)/activos` | `modules/activos/actions` | `activos.version`, `activos.status_gxp`, `activos.image_url`, `auditoria_log_cambios` |
 | Mantenimiento | `app/(app)/mantenimiento` | `modules/mantenimiento/actions.ts` | `mantenimientos_registros`, `formularios_respuestas`, `mantenimiento_plantillas_campos` |
 | RUI / Inspeccion | `app/(app)/mantenimiento/[area]` | inline Server Actions + `modules/mantenimiento/actions.ts` | `mantenimientos_registros`, `formularios_campos`, `formularios_respuestas` |
 | Evidencias | `checklist-form.tsx`, `evidence-photo-gallery.tsx` | Supabase Storage client/server utilities | Storage bucket `evidencias-mantenimiento` |
@@ -47,5 +48,6 @@ PharmaOps 360 es una plataforma Next.js/Supabase para gestion GxP de activos, ma
 - [Arquitectura App Router y Shell](./01-arquitectura-app-router-shell.md)
 - [IAM, Roles, Capacidades y Navegacion](./02-iam-navegacion-capacidades.md)
 - [Modelo de Datos Supabase](./10-modelo-datos-supabase.md)
+- [Control de Cambios de Activos PDAC](./16-control-cambios-activos-pdac.md)
 - [SuperAdmin D10S y Cabina de Control](./13-superadmin-d10s-cabina-control.md)
 - [Portal Auditor y Copias Controladas](./14-portal-auditor-copias-controladas.md)

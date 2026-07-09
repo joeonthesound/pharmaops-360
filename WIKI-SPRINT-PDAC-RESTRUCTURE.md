@@ -489,3 +489,41 @@ Before merging further FOR-PDAC-REV work, confirm:
 - `Estado Regulatorio` maps the signature lifecycle.
 - `Adjuntos` uses row-specific evidence array length.
 - `npm run typecheck` passes cleanly.
+
+## 23. FOR-PDAC-CC Persistence Calibration Trace
+
+The persistence layer for `FORM_ID: FOR-PDAC-CC` / `SCREEN_ID: SCREEN-ACT-CC-01` was calibrated so `public.control_cambios_activos.asset_id` receives the canonical polymorphic asset reference as a numeric BIGINT-compatible value. The insert payload now targets `asset_id`, `datos_anteriores`, `datos_nuevos`, `justificacion_tecnica`, `status_control`, `creado_por`, and `metadata_seguridad`, with SuperAdmin forensic telemetry gated by `ENABLE_SUPERADMIN_DEBUG_LOGS`.
+
+## 24. QA Sign-Off Hub Trace
+
+`FORM_ID: FOR-QA-SIGNOFF` / `SCREEN_ID: SCREEN-QA-SIGNOFF-01` introduces the QA and Supervisor verification console at `/admin/hub-firmas`. The hub reads `public.control_cambios_activos` rows with `status_control = PENDIENTE`, preserves `asset_id` as a numeric BIGINT-compatible value, and routes each request into `FORM_ID: FOR-QA-REVIEW` / `SCREEN_ID: SCREEN-QA-REV-01`.
+
+The review screen compares `datos_anteriores` against `datos_nuevos`, exposes `justificacion_tecnica` and `metadata_seguridad`, and provides two controlled outcomes: atomic approval through `public.aprobar_control_cambios(p_change_id, p_qa_user)` or rejection to `RECHAZADO - DESVIACIÓN` with a mandatory QA comment preserved in JSONB metadata.
+
+## 25. Sidebar Perimeter Trace For FOR-QA-SIGNOFF
+
+The navigation perimeter now exposes `Hub de Firmas GxP` at `/admin/hub-firmas` under the quality governance menu. Visibility is restricted through the sidebar capability matrix using `can_approve` / `can_audit`, preventing technical or temporal profiles from seeing `FORM_ID: FOR-QA-SIGNOFF` unless they carry an authorized QA/Supervisor approval capability. This update was validated with `npm run typecheck` returning zero compilation errors.
+
+## 26. HVAC Dashboard Canonical Schema And Tactile Trace
+
+`FORM_ID: FOR-MNT-HVAC-DASH` / `SCREEN_ID: SCREEN-MNT-HVAC-DASH-01` was synchronized with the canonical `public.activos` asset schema. The `/activos/hvac` dashboard now maps production rows for `asset_code`, `version`, `status_gxp`, `area`, `location_detail`, `next_maintenance_date`, and `internal_responsible`, removing local placeholder asset datasets from the card loop.
+
+The `COMP-HVAC-CARD-NODE` action target was expanded to a full-width 48px tactile boundary using the human-readable route `/activos/hvac/ver/{asset_code}`, improving industrial tablet and gloved-operator ergonomics while preserving the validated GxP navigation pattern.
+
+## 27. HVAC Dashboard Purge And Subsection Trace
+
+`FORM_ID: FOR-MNT-HVAC-DASH` / `SCREEN_ID: SCREEN-MNT-HVAC-DASH-01` was purged of disconnected upper analytics panels, hardcoded cleanroom telemetry, gauge widgets, notification simulations, and static pagination controls. The visible production surface is now isolated under `SUBSECTION_ID: SUB-HVAC-GRID-CONTAINER`, preserving the regulated width boundary `w-full max-w-[98vw] mx-auto px-4 lg:px-6 py-6`.
+
+Each `COMP-HVAC-CARD-NODE` now exposes validated transactional counters derived from `mantenimientos_registros`: `Órdenes Creadas`, `Órdenes Pendientes`, and `Órdenes Rechazadas`. Pending counts use amber emphasis when nonzero, rejected counts use crimson emphasis when nonzero, and the 48px action target continues routing through the human asset tag at `/activos/hvac/ver/{asset_code}`.
+
+## 28. HVAC Technical Field Execution Entry Point
+
+`FORM_ID: FOR-MNT-HVAC-TECH` / `SCREEN_ID: SCREEN-MNT-TECH-01` introduces the technical execution route at `/activos/hvac/rui/ht/[id]`, where `[id]` is the canonical RUI work order UUID string. The client form is isolated under `SUBSECTION_ID: SUB-TECH-FORM-CONTAINER` and captures personnel metadata, instrumental HVAC readings, technical comments, and a six-digit electronic signature PIN.
+
+The internal hierarchy is marked with `COMP-TECH-METADATA-BLOCK`, `COMP-TECH-PARAMETERS-BLOCK`, `COMP-TECH-SIGNATURE-BLOCK`, and `COMP-TECH-ACTION-TARGET`. All primary touch inputs and the submit target preserve the 48px tablet rule through `h-12`, and submission emits the client-side aduana group `[GxP TECHNICAL UPLOAD ADUANA — SUBMITTING EXECUTION DATA]` for forensic validation during the next persistence integration.
+
+## 29. HVAC Workflow Logic Evidence Realignment
+
+`FORM_ID: FOR-MNT-HVAC-REV` and `FORM_ID: FOR-MNT-HVAC-DASH` were realigned so visual lifecycle states cannot be inferred from the status string alone. The RUI review header now forces `PENDIENTE DE LLENADO - TÉCNICO` whenever the instrumental evidence set is incomplete or the technician signature token is absent, even if the persisted order status claims a signed state.
+
+The dashboard semaphore under `SUBSECTION_ID: SUB-HVAC-GRID-CONTAINER` now aggregates execution, review, sign-off, and deviation counters by evaluating actual `formularios_respuestas` cell contents together with supervisor, quality, and management signature timestamps. This closes the ALCOA+ gap where a work order with null parameters could previously pollute the QA/management counters.

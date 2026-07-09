@@ -20,6 +20,7 @@ Este directorio documenta de forma modular el estado funcional, tecnico y GxP de
 - [13 - SuperAdmin D10S y Cabina de Control](./13-superadmin-d10s-cabina-control.md)
 - [14 - Portal Auditor y Copias Controladas](./14-portal-auditor-copias-controladas.md)
 - [15 - Motor de Notificaciones GxP y Web Push](./15-notificaciones-web-push-gxp.md)
+- [16 - Control de Cambios de Activos PDAC](./16-control-cambios-activos-pdac.md)
 
 ## Guia Rapida por Perfil
 
@@ -30,6 +31,7 @@ Este directorio documenta de forma modular el estado funcional, tecnico y GxP de
 - Tecnico de Mantenimiento: ejecutar registros RUI desde vista movil, completar checklist, capturar evidencias y enviar a revision.
 - Auditor Externo: usar `/auditoria` para muestreo de expedientes cerrados, ficha forense y copias controladas de solo lectura.
 - Motor de Notificaciones: usar `public.notificaciones` como fuente futura para alertas in-app, badge realtime y Web Push PWA.
+- Control de Cambios PDAC: usar `public.activos.version`, `public.activos.status_gxp` e `public.activos.image_url` como fuente canonica para `FOR-PDAC-CC` y consultas de `FOR-PDAC-REV`.
 
 ## Convenciones
 

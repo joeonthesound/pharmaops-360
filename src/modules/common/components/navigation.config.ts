@@ -179,13 +179,19 @@ export const NAVIGATION_TREE: NavigationNode[] = [
   {
     title: 'Calidad',
     icon: 'ShieldCheck',
-    rolesAllowed: ['Administrador', 'Propietario / Gerencia', 'Calidad', 'Administrativo'],
+    rolesAllowed: ['Administrador', 'Propietario / Gerencia', 'Calidad', 'Supervisor', 'Administrativo'],
     children: [
       {
         title: 'Aprobaciones',
         href: '/dashboard?view=sent',
         icon: 'ClipboardCheck',
         rolesAllowed: ['Administrador', 'Propietario / Gerencia', 'Calidad', 'Administrativo'],
+      },
+      {
+        title: 'Hub de Firmas GxP',
+        href: '/admin/hub-firmas',
+        icon: 'ShieldCheck',
+        requiredCapabilities: ['can_approve', 'can_audit'],
       },
       {
         title: 'Auditor\u00eda',
